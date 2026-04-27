@@ -84,7 +84,7 @@ def transform_data(data1):
 
 
 # load the csv files in data frame and start normalizing
-def load_data_train(datafile):
+def load_training_data(datafile):
     # dataroot = "activity2"
 
     dataroot = datafile
@@ -214,7 +214,7 @@ def load_data_train(datafile):
     return data_train
 
 
-def load_data_test(datafile):  # take in .csv folder address
+def load_test_data(datafile):  # take in .csv folder address
     # dataroot = "test_activity1"
     dataroot = datafile
 
@@ -336,10 +336,10 @@ def load_data_test(datafile):  # take in .csv folder address
 
     return data
 
-#h = load_data_test('D:\\SOM_work\\test_act\\act2\\')
+#h = load_test_data('D:\\SOM_work\\test_act\\act2\\')
 #print("testdata", len(testData))
-#h= load_data_train("all_activities_train")
-#h= load_data_train("20_activities_train")
+#h= load_training_data("all_activities_train")
+#h= load_training_data("20_activities_train")
 
 #print("h inside:", len(h))
 

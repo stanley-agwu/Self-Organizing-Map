@@ -221,6 +221,6 @@ __marimo__/
 .streamlit/secrets.toml
 **/Activity[0-9]*
 **/CSV_FILES
-/param
-/test
+/training_data
+/test_data
 /Clusters

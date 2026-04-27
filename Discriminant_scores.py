@@ -13,21 +13,21 @@ import os
 from sklearn.decomposition import PCA
 from sklearn.utils import shuffle
 from matplotlib.lines import Line2D
-from preprocess_all_act import load_data_train, load_data_test
+from preprocess_all_act import load_training_data, load_test_data
 
 
 # ================================================================
 # Competitive Learning Class
 # ================================================================
 class CompetitiveLearning:
-    def __init__(self, num_neurons, params, radius, alpha, gaussian, dist_metric):
+    def __init__(self, num_neurons, training_data, radius, learning_rate, gaussian, dist_metric):
         self.num_neurons = num_neurons
         self.radius = radius
-        self.alpha = alpha
+        self.learning_rate = learning_rate
         self.gaussian = gaussian
         self.dist_metric = dist_metric
 
-        self.input_data = load_data_train(params)
+        self.input_data = load_training_data(training_data)
         self.neuron_weights = np.random.normal(
             np.mean(self.input_data),
             np.std(self.input_data),
@@ -74,10 +74,10 @@ class CompetitiveLearning:
     # ------------------------------------------------------------
     def update_weights(self, inp):
         """Update weights of the winner and its neighborhood."""
-        self.neuron_weights[self.winner] += self.alpha * (inp - self.neuron_weights[self.winner])
+        self.neuron_weights[self.winner] += self.learning_rate * (inp - self.neuron_weights[self.winner])
         for idx, dist in self.kohonen_neighborhood().items():
             if dist <= self.radius:
-                self.neuron_weights[idx] += 0.8 * self.alpha * (inp - self.neuron_weights[idx])
+                self.neuron_weights[idx] += 0.8 * self.learning_rate * (inp - self.neuron_weights[idx])
 
     def kohonen_neighborhood(self):
         """Return neurons within the neighborhood radius."""
@@ -175,7 +175,7 @@ class CompetitiveLearning:
 
     def plot_winning_clusters_2d(self, X, winners, title,
                                 save_path=None, max_points=None,
-                                overlay_weights=True, alpha=0.7, s=14):
+                                overlay_weights=True, learning_rate=0.7, s=14):
         X = np.asarray(X)
         winners = np.asarray(winners)
 
@@ -214,7 +214,7 @@ class CompetitiveLearning:
             idx = np.where(wp == c)[0]
             plt.scatter(X2[idx, 0], X2[idx, 1],
                         color=colors[c], label=f"Neuron {c}",
-                        alpha=alpha, s=s, edgecolors='none')
+                        learning_rate=learning_rate, s=s, edgecolors='none')
 
         if overlay_weights and W2 is not None:
             plt.scatter(W2[:, 0], W2[:, 1],
@@ -224,7 +224,7 @@ class CompetitiveLearning:
         plt.xlabel("PCA Component 1")
         plt.ylabel("PCA Component 2")
         plt.title(title)
-        plt.grid(True, alpha=0.3)
+        plt.grid(True, learning_rate=0.3)
         plt.legend(loc='upper left', bbox_to_anchor=(1.02, 1), title="Winners")
         plt.tight_layout()
 
@@ -430,7 +430,7 @@ class CompetitiveLearning:
                 for start, end in ranges:
                     region = winner_idx[start:end + 1]
                     axs[idx].axvspan(region[0], region[-1],
-                                     color=colors[neuron % len(colors)], alpha=0.2)
+                                     color=colors[neuron % len(colors)], learning_rate=0.2)
 
             axs[idx].set_title(f'Neuron {neuron} Discriminant Scores')
             axs[idx].set_xlabel('Data Points')
@@ -493,9 +493,9 @@ class CompetitiveLearning:
 
 #         CL = CompetitiveLearning(
 #             num_neurons=num_neurons,
-#             params="param",
+#             training_data="param",
 #             radius=0.0001,
-#             alpha=0.007,
+#             learning_rate=0.007,
 #             gaussian=1,
 #             dist_metric='cosine'
 #         )
@@ -503,7 +503,7 @@ class CompetitiveLearning:
 #         CL.train(epoch_num=40)
 #         CL.save(f'SOM_{num_neurons}_cls.pkl')
 
-#         test_data = load_data_test('test')
+#         test_data = load_test_data('test')
 
 #         winners, second_winners = CL.classify(
 #             test_data,
@@ -551,9 +551,9 @@ if __name__ == '__main__':
 
         CL = CompetitiveLearning(
             num_neurons=num_neurons,
-            params=param,
+            training_data=param,
             radius=0.0001,
-            alpha=0.007,
+            learning_rate=0.007,
             gaussian=1,
             dist_metric='cosine'
         )
@@ -562,15 +562,15 @@ if __name__ == '__main__':
         CL.save(f'SOM_{num_neurons}_cls.pkl')
 
     # Load test data once
-    test_data = load_data_test('test')
+    test_data = load_test_data('test')
 
     # PASS 2: load each trained model and make discriminant plots
     for num_neurons in number_of_neurons_list:
         CL = CompetitiveLearning(
             num_neurons=num_neurons,
-            params=param,
+            training_data="training_data",
             radius=0.0001,
-            alpha=0.007,
+            learning_rate=0.007,
             gaussian=1,
             dist_metric='cosine'
         )
