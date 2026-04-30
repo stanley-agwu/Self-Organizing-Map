@@ -257,8 +257,7 @@ class CompetitiveLearning:
             bbox_inches="tight",
         )
 
-        plt.show(block=False)
-        plt.pause(0.001)
+        plt.close()
 
     def calculate_quantization_error(self):
         """
@@ -452,8 +451,7 @@ class CompetitiveLearning:
 
         if save_path:
             plt.savefig(save_path, dpi=200, bbox_inches="tight")
-        plt.show(block=False)
-        plt.pause(0.001)
+        plt.close()
 
     # ------------------------------------------------------------
     # Convergence visualization
@@ -522,9 +520,7 @@ class CompetitiveLearning:
         plt.legend()
 
         plt.savefig(f"figures_new_SOM_{self.num_neurons}/convergence_pca.png")
-
-        plt.show(block=False)
-        plt.pause(0.001)
+        plt.close()
 
     def visualize_weight_pca(self):
         """
@@ -589,8 +585,7 @@ class CompetitiveLearning:
             bbox_inches="tight",
         )
 
-        plt.show(block=False)
-        plt.pause(0.001)
+        plt.close()
 
     # ------------------------------------------------------------
     # Classification (Discriminant Score Evaluation)
@@ -738,8 +733,7 @@ class CompetitiveLearning:
         )
 
         plt.tight_layout()
-        plt.show(block=False)
-        plt.pause(0.001)
+        plt.close()
 
     def plot_skeleton(self, ax, joints, joint_connections=None, title=""):
         """
@@ -977,8 +971,7 @@ class CompetitiveLearning:
             bbox_inches="tight",
         )
 
-        plt.show(block=False)
-        plt.pause(0.001)
+        plt.close()
 
     def plot_discriminant_subplots(self, bmu_sequence, input_samples, cluster_colors):
         """
@@ -1053,8 +1046,7 @@ class CompetitiveLearning:
             dpi=200,
             bbox_inches="tight",
         )
-        plt.show(block=False)
-        plt.pause(0.001)
+        plt.close()
 
     # ------------------------------------------------------------
     # Miscellaneous
@@ -1117,8 +1109,7 @@ class CompetitiveLearning:
             bbox_inches="tight",
         )
 
-        plt.show(block=False)
-        plt.pause(0.001)
+        plt.close()
 
     def plot_train(self, max_points=4000, overlay_weights=True):
         """
@@ -1200,8 +1191,7 @@ class CompetitiveLearning:
             bbox_inches="tight",
         )
 
-        plt.show(block=False)
-        plt.pause(0.001)
+        plt.close()
 
     def save(self, filename):
         """
@@ -1408,8 +1398,7 @@ if __name__ == "__main__":
     plt.legend()
     plt.tight_layout()
     plt.savefig("som_model_selection_metrics.png", dpi=200, bbox_inches="tight")
-    plt.show(block=False)
-    plt.pause(0.001)
+    plt.close()
 
     # --------------------------------------------------------
     # Estimate optimal number of neurons
