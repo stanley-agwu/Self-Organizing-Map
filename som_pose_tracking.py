@@ -28,6 +28,8 @@ class CompetitiveLearning:
         self.learning_rate = learning_rate
         self.gaussian = gaussian
         self.dist_metric = dist_metric
+        self.grid_shape = (int(np.sqrt(self.num_neurons)),
+                        int(np.sqrt(self.num_neurons)))
 
         self.input_data = load_training_data(training_data)
         self.neuron_weights = np.random.normal(
@@ -275,13 +277,12 @@ class CompetitiveLearning:
 
     def calculate_topographic_error(self):
         """
-        Compute Topographic Error (TE).
+        Compute Topographic Error (TE) for 2D SOM.
         """
 
         violations = []
 
         for input_vector in self.input_data:
-
             # distances from sample to all neurons
             distances = self.calculate_distances(input_vector, self.neuron_weights)
 
@@ -301,12 +302,19 @@ class CompetitiveLearning:
 
         self.topographic_error.append(topographic_error)
 
-    # NOTE: If SOM grids changes to 2D, this function must change.
     def are_neighbours(self, neuron1, neuron2):
         """
-        Two neurons are neighbors if adjacent in 1D SOM.
+        Check if two neurons are neighbors in 2D SOM grid (4-connectivity).
         """
-        return abs(neuron1 - neuron2) == 1
+
+        r1, c1 = self.index_to_2d(neuron1)
+        r2, c2 = self.index_to_2d(neuron2)
+
+        return abs(r1 - r2) + abs(c1 - c2) == 1
+    
+    def index_to_2d(self, index):
+        _, cols = self.grid_shape
+        return index // cols, index % cols
 
     def get_cluster_colors(self, cluster_labels):
         """
@@ -316,7 +324,7 @@ class CompetitiveLearning:
         """
         unique_cluster_ids = np.unique(cluster_labels)
 
-        color_map = plt.cm.get_cmap("tab20", max(len(unique_cluster_ids), 1))
+        color_map = plt.get_cmap("tab20", max(len(unique_cluster_ids), 1))
 
         cluster_color_lookup = {
             cluster_id: color_map(color_index)
@@ -696,7 +704,11 @@ class CompetitiveLearning:
         Assumes posture vectors are flattened 3D joint coordinates.
         """
 
-        input_vector = test_samples[sample_index]
+        input_vector = np.asarray(test_samples[sample_index], dtype=float)
+        if input_vector.size % 3 != 0:
+            raise ValueError(
+                f"Input vector length must be divisible by 3, got {input_vector.size}"
+            )
 
         distances = self.calculate_distances(input_vector, self.neuron_weights)
 
@@ -732,7 +744,18 @@ class CompetitiveLearning:
             title=f"2nd BMU {second_bmu_index}\nDistance={distances[second_bmu_index]:.4f}",
         )
 
+        save_dir = "figures_posture_SOM"
+        os.makedirs(save_dir, exist_ok=True)
+
+        plt.xlabel("Postures ***")
+        plt.ylabel("BMU and 2nd BMU ***")
+        plt.title("Skeletal Plots")
         plt.tight_layout()
+        plt.savefig(
+            os.path.join(save_dir, f"{self.num_neurons}_posture_match.png"),
+            dpi=200,
+            bbox_inches="tight",
+        )
         plt.close()
 
     def plot_skeleton(self, ax, joints, joint_connections=None, title=""):
@@ -773,76 +796,62 @@ class CompetitiveLearning:
     # ------------------------------------------------------------
     # Supporting Methods
     # ------------------------------------------------------------
-    def initialize_distance_normalization_constants(
-        self, test_samples, neuron_counts=(range(6, 20, 2))
-    ):
+    def initialize_distance_normalization_constants(self, test_samples, neuron_counts, model_dir):
         """
-        Compute normalization constants across multiple trained SOM models
-        for discriminant and BMU-gap confidence scores. This function computes
-        normalization constants from multiple trained SOMs so the discriminant
-        and cluster confidence scores can be scaled consistently across models.
+        Compute per-model normalization constants for multiple trained SOM models.
+
+        For each SOM model, this stores:
+            - maximum BMU distance
+            - maximum BMU-to-second-BMU gap
+
+        These constants allow discriminant and confidence scores to be normalized
+        separately for each SOM size instead of using one global summed value.
         """
-        max_distances = []
-        max_gap_distances = []
+        self.model_max_bmu_distances = {}
+        self.model_max_gap_distances = {}
 
         for num_neurons in neuron_counts:
-            model_file = f"SOM_{num_neurons}_cls.pkl"
+            model_file = f"{model_dir}/SOM_{num_neurons}_cls.pkl"
 
-            max_distances.append(self.get_max_bmu_distance(model_file, test_samples))
+            max_bmu_distance = self.get_max_bmu_distance(model_file, test_samples)
 
-            max_gap_distances.append(
-                self.get_max_gap_distance(model_file, test_samples)
-            )
+            max_gap_distance = self.get_max_gap_distance(model_file, test_samples)
 
-        self.sum_max_distances = sum(max_distances)
-        self.sum_max_gap_distances = sum(max_gap_distances)
+            self.model_max_bmu_distances[num_neurons] = max_bmu_distance
+            self.model_max_gap_distances[num_neurons] = max_gap_distance
 
-    def calculate_discriminant_score(self, neuron_distances, bmu_index):
+    def calculate_discriminant_score(self, neuron_distances, bmu_index, num_neurons):
         """
         Discriminant score based on BMU distance.
         Higher score = more confident assignment.
+
+        Normalize BMU distance using per-model constant.
         """
+        max_dist = self.model_max_bmu_distances[num_neurons]
 
-        bmu_distance = neuron_distances[bmu_index]
-
-        # If posture overlaps perfectly with BMU centroid
-        if bmu_distance == 0:
+        if max_dist == 0:
             return 1.0
 
-        inverse_distances = []
+        return max(1 - (neuron_distances[bmu_index] / max_dist), 0)
 
-        for distance_value in neuron_distances:
-            if distance_value == 0:
-                inverse_distances.append(np.inf)
-            else:
-                inverse_distances.append(1 / abs(distance_value))
-
-        # If any centroid has zero distance, it gets full confidence
-        if np.isinf(inverse_distances).any():
-            return 1.0 if bmu_distance == 0 else 0.0
-
-        return inverse_distances[bmu_index] / np.sum(inverse_distances)
-
-    def calculate_discriminant_gap_score(self, neuron_distances):
+    def calculate_discriminant_gap_score(self, neuron_distances, num_neurons):
         """
         Confidence score based on BMU and 2nd BMU distance gap.
         Larger gap means more confident BMU assignment.
+
+        Normalize BMU gap using per-model constant.
         """
+        if len(neuron_distances) < 2:
+            return 0.0
 
-        sorted_indices = np.argsort(neuron_distances)
+        sorted_distances = np.sort(neuron_distances)
+        gap = sorted_distances[1] - sorted_distances[0]
+        max_gap = self.model_max_gap_distances[num_neurons]
 
-        bmu_index = sorted_indices[0]
-        second_bmu_index = sorted_indices[1]
+        if max_gap == 0:
+            return 0.0
 
-        bmu_distance = neuron_distances[bmu_index]
-        second_bmu_distance = neuron_distances[second_bmu_index]
-
-        if second_bmu_distance == 0:
-            return 1.0
-
-        gap_score = (second_bmu_distance - bmu_distance) / second_bmu_distance
-
-        return gap_score
+        return gap / max_gap
 
     def get_max_bmu_distance(self, model_file, test_samples):
         """
@@ -855,62 +864,30 @@ class CompetitiveLearning:
 
         neuron_weights = model_data["neuron_weights"]
 
-        max_bmu_distance = 0
+        max_bmu_distance = 0.0
 
-        for posture_vector in test_samples:
-
-            neuron_distances = self.calculate_distances(posture_vector, neuron_weights)
-
+        for sample in test_samples:
+            neuron_distances = self.calculate_distances(sample, neuron_weights)
             bmu_distance = min(neuron_distances)
-
             max_bmu_distance = max(max_bmu_distance, bmu_distance)
 
         return max_bmu_distance
 
-    def get_max_gap_distance(self, model_file, test_data):
+    def get_max_gap_distance(self, model_file, test_samples):
         """Maximum BMU–2ndBMU gap per model."""
         with open(model_file, "rb") as f:
             model_dict = pickle.load(f)
+
         weights = model_dict["neuron_weights"]
-        max_gap = 0
-        for inp in test_data:
-            distances = self.calculate_distances(inp, weights)
-            sorted_d = np.sort(distances)
-            gap = sorted_d[1] - sorted_d[0]
+        max_gap = 0.0
+
+        for sample in test_samples:
+            distances = self.calculate_distances(sample, weights)
+            sorted_distances = np.sort(distances)
+            gap = sorted_distances[1] - sorted_distances[0]
             max_gap = max(max_gap, gap)
+
         return max_gap
-
-    def get_max_bmu_gap_distance(self, model_file, test_samples):
-        """
-        Maximum BMU-to-second-BMU distance gap over
-        all test samples. This function finds the largest
-        observed margin between first and second BMUs,
-        useful for normalizing gap-based confidence scores.
-        """
-        with open(model_file, "rb") as file_handle:
-            model_data = pickle.load(file_handle)
-
-        neuron_weights = model_data["neuron_weights"]
-
-        max_bmu_gap = 0
-
-        for input_vector in test_samples:
-
-            neuron_distances = self.calculate_distances(input_vector, neuron_weights)
-
-            sorted_distances = np.sort(neuron_distances)
-
-            if len(sorted_distances) < 2:
-                continue
-
-            bmu_distance = sorted_distances[0]
-            second_bmu_distance = sorted_distances[1]
-
-            bmu_gap = second_bmu_distance - bmu_distance
-
-            max_bmu_gap = max(max_bmu_gap, bmu_gap)
-
-        return max_bmu_gap
 
     # ------------------------------------------------------------
     # Visualization Helpers
@@ -960,20 +937,16 @@ class CompetitiveLearning:
         plt.xlabel("Sample Index")
         plt.ylabel("Discriminant Score")
         plt.title(plot_title)
-
         plt.legend(bbox_to_anchor=(1, 1), loc="upper left")
-
         plt.tight_layout()
-
         plt.savefig(
             f"figures_new_SOM_{self.num_neurons}/discriminant_series.png",
             dpi=200,
             bbox_inches="tight",
         )
-
         plt.close()
 
-    def plot_discriminant_subplots(self, bmu_sequence, input_samples, cluster_colors):
+    def plot_discriminant_subplots(self, bmu_sequence, input_samples, cluster_colors, num_neurons):
         """
         Plot discriminant score trends for each winning neuron.
 
@@ -1005,7 +978,7 @@ class CompetitiveLearning:
                 )
 
                 score = self.calculate_discriminant_score(
-                    neuron_distances, neuron_index
+                    neuron_distances, neuron_index, num_neurons
                 )
 
                 neuron_discriminant_scores.append(score)
@@ -1097,18 +1070,14 @@ class CompetitiveLearning:
         plt.xlabel("Epoch")
         plt.ylabel("Weight Change Δ (L2 Norm)")
         plt.title("SOM Weight Convergence Over Epochs")
-
         plt.grid(True, alpha=0.3)
         plt.legend()
-
         plt.tight_layout()
-
         plt.savefig(
             f"figures_new_SOM_{self.num_neurons}/weight_changes.png",
             dpi=200,
             bbox_inches="tight",
         )
-
         plt.close()
 
     def plot_train(self, max_points=4000, overlay_weights=True):
@@ -1180,18 +1149,155 @@ class CompetitiveLearning:
         plt.ylabel("PCA Component 2")
         plt.title("Training Clusters (PCA Projection)")
         plt.grid(True, alpha=0.3)
-
         plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", title="Clusters")
-
         plt.tight_layout()
-
         plt.savefig(
             f"figures_new_SOM_{self.num_neurons}/train_pca.png",
             dpi=200,
             bbox_inches="tight",
         )
-
         plt.close()
+
+    def plot_metric_across_models(
+        self,
+        metric_dict,
+        bmu_sequence_dict,
+        cluster_colors_dict,
+        metric_name,
+        ylabel,
+        save_dir,
+    ):
+        """
+        Plot one metric trend across input samples for each SOM model.
+
+        Each subplot corresponds to one SOM model.
+        Shaded regions show where each neuron is the active BMU inside that model.
+
+        Args:
+            metric_dict:
+                dict[num_neurons] -> array of metric values per sample
+
+            bmu_sequence_dict:
+                dict[num_neurons] -> array of BMU indices per sample
+
+            cluster_colors_dict:
+                dict[num_neurons] -> dict/list mapping neuron index to color
+
+            metric_name:
+                Name of metric, e.g. "QE", "TE", "Discriminant Score", "Gap Score"
+
+            ylabel:
+                Label for y-axis
+
+            save_dir:
+                Directory where figure is saved
+        """
+        model_ids = sorted(metric_dict.keys())
+        num_models = len(model_ids)
+
+        fig, axes = plt.subplots(
+            num_models,
+            1,
+            figsize=(14, 3.5 * num_models),
+            sharex=True
+        )
+
+        if num_models == 1:
+            axes = [axes]
+
+        fig.suptitle(
+            f"{metric_name} Trends Across Input Samples for All SOM Models",
+            fontsize=16
+        )
+
+        for subplot_index, num_neurons in enumerate(model_ids):
+            ax = axes[subplot_index]
+
+            metric_values = np.asarray(metric_dict[num_neurons])
+            bmu_sequence = np.asarray(bmu_sequence_dict[num_neurons])
+            cluster_colors = cluster_colors_dict[num_neurons]
+
+            x = np.arange(len(metric_values))
+
+            # -----------------------------
+            # Plot metric trend
+            # -----------------------------
+            ax.plot(
+                x,
+                metric_values,
+                linewidth=1.5,
+                label=f"SOM {num_neurons}"
+            )
+
+            # -----------------------------
+            # Shaded BMU active regions
+            # -----------------------------
+            bmu_sequence = np.asarray(bmu_sequence)
+
+            # Count how often each neuron wins
+            unique, counts = np.unique(bmu_sequence, return_counts=True)
+
+            # Sort by frequency (descending)
+            sorted_indices = np.argsort(counts)[::-1]
+
+            # Select top 4 neurons
+            top_k = 4
+            top_neurons = unique[sorted_indices[:top_k]]
+            all_indices = np.arange(len(bmu_sequence))
+
+            non_top_mask = ~np.isin(bmu_sequence, top_neurons)
+
+            # Shade non-top regions lightly
+            if np.any(non_top_mask):
+                ax.fill_between(
+                    all_indices,
+                    metric_values.min(),
+                    metric_values.max(),
+                    where=non_top_mask,
+                    color="gray",
+                    alpha=0.05,
+                    step="pre"
+                )
+
+            for neuron_index in top_neurons:
+                winning_sample_indices = np.where(bmu_sequence == neuron_index)[0]
+
+                if len(winning_sample_indices) == 0:
+                    continue
+
+                breaks = np.where(np.diff(winning_sample_indices) > 1)[0]
+
+                segment_ranges = zip(
+                    np.r_[0, breaks + 1],
+                    np.r_[breaks, len(winning_sample_indices) - 1]
+                )
+
+                for start_idx, end_idx in segment_ranges:
+                    active_region = winning_sample_indices[start_idx:end_idx + 1]
+
+                    ax.axvspan(
+                        active_region[0],
+                        active_region[-1],
+                        color=cluster_colors[neuron_index],
+                        alpha=0.25
+                    )
+
+            ax.set_title(f"SOM {num_neurons} Neurons | {metric_name}")
+            ax.set_ylabel(ylabel)
+            ax.grid(True, alpha=0.3)
+            ax.legend(loc="upper right")
+
+        axes[-1].set_xlabel("Input Sample Index")
+
+        plt.tight_layout(rect=[0, 0, 1, 0.97])
+
+        filename = f"{metric_name.lower().replace(' ', '_')}_trends_by_model.png"
+        save_path = os.path.join(save_dir, filename)
+
+        plt.savefig(save_path, dpi=200, bbox_inches="tight")
+        plt.close()
+
+        print(f"{save_path}, plotted")
 
     def save(self, filename):
         """
@@ -1224,54 +1330,74 @@ if __name__ == "__main__":
     training_data = "training_data"
     test_data = "test_data"
 
-    test_samples = load_test_data(test_data)
-
+    # Define models - [6 - 18]
     neuron_range = range(6, 20, 2)
 
-    radius = 0.5
-    learning_rate = 0.01
-    gaussian = False
-    dist_metric = "euclidean"
+    radius = 0.0001
+    learning_rate = 0.007
+    gaussian = True
+    dist_metric = "cosine"
 
     num_epochs = 100
     convergence_threshold = 0.05
     patience = 10
 
     model_dir = "trained_som_models"
+    decision_dir = "model_decision"
     os.makedirs(model_dir, exist_ok=True)
+    os.makedirs(decision_dir, exist_ok=True)
 
     results = []
 
     # ------------------------------------------------------------
-    # Train SOM models from 5 to 20 neurons
+    # Train SOM models from 6 to 18 neurons
     # ------------------------------------------------------------
+    # for num_neurons in neuron_range:
+    #     print("\n================================================")
+    #     print(f"Training SOM with {num_neurons} neurons")
+    #     print("==================================================")
+
+    #     os.makedirs(f"figures_new_SOM_{num_neurons}", exist_ok=True)
+
+    #     som = CompetitiveLearning(
+    #         num_neurons=num_neurons,
+    #         training_data=training_data,
+    #         radius=radius,
+    #         learning_rate=learning_rate,
+    #         gaussian=gaussian,
+    #         dist_metric=dist_metric,
+    #     )
+
+    #     som.train(
+    #         num_of_epochs=num_epochs,
+    #         convergence_threshold=convergence_threshold,
+    #         patience=patience,
+    #     )
+
+    #     model_path = f"{model_dir}/SOM_{num_neurons}_cls.pkl"
+    #     som.save(model_path)
+    #     print(f"Saved model: {model_path}")
+
+    # ------------------------------------------------------------
+    # Test SOM models from 6 to 18 neurons
+    # ------------------------------------------------------------
+    # Load test data
+    test_samples = load_test_data(test_data)
+
+    comparative_metrics = {
+        "QE": {},
+        "TE": {},
+        "discriminant": {},
+        "gap": {},
+    }
+
+    bmu_sequences_by_model = {}
+    cluster_colors_by_model = {}
+
+    comparison_dir = "model_comparison_plots"
+    os.makedirs(comparison_dir, exist_ok=True)
+
     for num_neurons in neuron_range:
-        print(f"\n================================================")
-        print(f"Training SOM with {num_neurons} neurons")
-        print(f"==================================================")
-
-        os.makedirs(f"figures_new_SOM_{num_neurons}", exist_ok=True)
-
-        som = CompetitiveLearning(
-            num_neurons=num_neurons,
-            training_data=training_data,
-            radius=radius,
-            learning_rate=learning_rate,
-            gaussian=gaussian,
-            dist_metric=dist_metric,
-        )
-
-        som.train(
-            num_of_epochs=num_epochs,
-            convergence_threshold=convergence_threshold,
-            patience=patience,
-        )
-
-        model_path = f"{model_dir}/SOM_{num_neurons}_cls.pkl"
-        som.save(model_path)
-
-        print(f"Saved model: {model_path}")
-
         # --------------------------------------------------------
         # Load trained model
         # --------------------------------------------------------
@@ -1284,7 +1410,14 @@ if __name__ == "__main__":
             dist_metric=dist_metric,
         )
 
+        model_path = f"{model_dir}/SOM_{num_neurons}_cls.pkl"
+
         loaded_som.load(model_path)
+
+        # Initialize normalization
+        loaded_som.initialize_distance_normalization_constants(
+            test_samples, neuron_range, model_dir
+        )
 
         # --------------------------------------------------------
         # Classify test data
@@ -1295,7 +1428,7 @@ if __name__ == "__main__":
             apply_filter=True,
             plot_results=True,
             overlay_weights=True,
-            max_points=6000,
+            max_points=8000,
         )
 
         # --------------------------------------------------------
@@ -1304,22 +1437,86 @@ if __name__ == "__main__":
         discriminant_scores = []
         gap_scores = []
 
-        for input_vector in test_samples:
+        # --------------------------------------------------------
+        # Per-sample metric containers for this SOM model
+        # --------------------------------------------------------
+        sample_qe_values = []
+        sample_te_values = []
+        sample_discriminant_scores = []
+        sample_gap_scores = []
+
+        for sample in test_samples:
             neuron_distances = loaded_som.calculate_distances(
-                input_vector, loaded_som.neuron_weights
+                sample, loaded_som.neuron_weights
             )
 
             sorted_indices = np.argsort(neuron_distances)
             bmu_index = sorted_indices[0]
+            second_bmu_index = sorted_indices[1]
 
             discriminant_score = loaded_som.calculate_discriminant_score(
-                neuron_distances, bmu_index
+                neuron_distances, bmu_index, loaded_som.num_neurons
             )
 
-            gap_score = loaded_som.calculate_discriminant_gap_score(neuron_distances)
+            gap_score = loaded_som.calculate_discriminant_gap_score(
+                neuron_distances, loaded_som.num_neurons
+            )
 
             discriminant_scores.append(discriminant_score)
             gap_scores.append(gap_score)
+
+            # -----------------------------
+            # Per-sample QE
+            # -----------------------------
+            # QE per sample = distance from sample to BMU
+            sample_qe = neuron_distances[bmu_index]
+
+            # -----------------------------
+            # Per-sample TE
+            # -----------------------------
+            # TE per sample = 0 if BMU and 2nd BMU are neighbors, else 1
+            if loaded_som.are_neighbours(bmu_index, second_bmu_index):
+                sample_te = 0
+            else:
+                sample_te = 1
+
+            # -----------------------------
+            # Discriminant score
+            # -----------------------------
+            discriminant_score = loaded_som.calculate_discriminant_score(
+                neuron_distances,
+                bmu_index,
+                loaded_som.num_neurons
+            )
+
+            # -----------------------------
+            # Gap score
+            # -----------------------------
+            gap_score = loaded_som.calculate_discriminant_gap_score(
+                neuron_distances,
+                loaded_som.num_neurons
+            )
+
+            sample_qe_values.append(sample_qe)
+            sample_te_values.append(sample_te)
+            sample_discriminant_scores.append(discriminant_score)
+            sample_gap_scores.append(gap_score)
+            bmu_sequences_by_model[num_neurons] = np.asarray(bmu_sequence)
+            cluster_colors_by_model[num_neurons] = loaded_som.get_cluster_colors(
+                bmu_sequence
+            )
+        
+        # Convert to numpy arrays
+        sample_qe_values = np.asarray(sample_qe_values)
+        sample_te_values = np.asarray(sample_te_values)
+        sample_discriminant_scores = np.asarray(sample_discriminant_scores)
+        sample_gap_scores = np.asarray(sample_gap_scores)
+
+        # Store for comparative plotting
+        comparative_metrics["QE"][num_neurons] = sample_qe_values
+        comparative_metrics["TE"][num_neurons] = sample_te_values
+        comparative_metrics["discriminant"][num_neurons] = sample_discriminant_scores
+        comparative_metrics["gap"][num_neurons] = sample_gap_scores
 
         discriminant_scores = np.asarray(discriminant_scores)
         gap_scores = np.asarray(gap_scores)
@@ -1361,6 +1558,7 @@ if __name__ == "__main__":
             bmu_sequence=bmu_sequence,
             input_samples=test_samples,
             cluster_colors=cluster_colors,
+            num_neurons=loaded_som.num_neurons
         )
 
         # --------------------------------------------------------
@@ -1371,6 +1569,45 @@ if __name__ == "__main__":
             sample_index=0,
             joint_connections=loaded_som.joint_connections,
         )
+    
+    # --------------------------------------------------------
+    # Plot Metrics accross models - QE, TE, DS, GAP
+    # --------------------------------------------------------
+    loaded_som.plot_metric_across_models(
+        metric_dict=comparative_metrics["QE"],
+        bmu_sequence_dict=bmu_sequences_by_model,
+        cluster_colors_dict=cluster_colors_by_model,
+        metric_name="Quantization Error",
+        ylabel="QE / BMU Distance",
+        save_dir=comparison_dir,
+    )
+
+    loaded_som.plot_metric_across_models(
+        metric_dict=comparative_metrics["TE"],
+        bmu_sequence_dict=bmu_sequences_by_model,
+        cluster_colors_dict=cluster_colors_by_model,
+        metric_name="Topographic Error",
+        ylabel="TE Violation",
+        save_dir=comparison_dir,
+    )
+
+    loaded_som.plot_metric_across_models(
+        metric_dict=comparative_metrics["discriminant"],
+        bmu_sequence_dict=bmu_sequences_by_model,
+        cluster_colors_dict=cluster_colors_by_model,
+        metric_name="Discriminant Score",
+        ylabel="Discriminant Score",
+        save_dir=comparison_dir,
+    )
+
+    loaded_som.plot_metric_across_models(
+        metric_dict=comparative_metrics["gap"],
+        bmu_sequence_dict=bmu_sequences_by_model,
+        cluster_colors_dict=cluster_colors_by_model,
+        metric_name="Gap Score",
+        ylabel="Normalized Gap Score",
+        save_dir=comparison_dir,
+    )
 
     # --------------------------------------------------------
     # Plot QE + TE + Discriminant Stability
@@ -1397,7 +1634,11 @@ if __name__ == "__main__":
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.tight_layout()
-    plt.savefig("som_model_selection_metrics.png", dpi=200, bbox_inches="tight")
+    plt.savefig(
+        os.path.join(decision_dir, "som_model_selection_metrics.png"),
+        dpi=200,
+        bbox_inches="tight",
+    )
     plt.close()
 
     # --------------------------------------------------------
@@ -1422,3 +1663,7 @@ if __name__ == "__main__":
 
     print("Best SOM model: ")
     print(best_model)
+
+
+# TO DO
+# use U-matrix and cluster boundaries
