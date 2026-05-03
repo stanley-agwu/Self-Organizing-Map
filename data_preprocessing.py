@@ -112,10 +112,20 @@ def load_training_data(datafile):
     eps = 1e-8
 
     data_paths = [read_data(datafile, "*c1-w.csv"), read_data(datafile, "*c2-w.csv")]
+    print("\n================================================")
+    print("Training Data path - File name")
+    print(f"Data Paths: {data_paths}")
+    print("==================================================")
 
     for data_path in data_paths:
         num_records, num_features = data_path.shape
+        print("\n================================================")
+        print("Training Data records")
+        print(f"Data Path/File name: {data_path}")
+        print(f"Num of Records/Rows: {num_records}")
+        print(f"Num of Features/Columns: {num_features}")
         print(f"There are {num_records} records with {num_features} features")
+        print("==================================================")
 
         data = data_path.rename(columns=lambda x: x.strip())
         print("Stripped column names")
@@ -306,9 +316,19 @@ def load_test_data(datafile):
         - Output is suitable for SOM classification and distance computations.
     """
     data_paths = read_data(datafile, "*.csv")
+    print("\n================================================")
+    print("Tests Data path - File name")
+    print(f"Data Files: {data_paths}")
+    print(f"Data source directory: {datafile}")
+    print("==================================================")
 
     num_records, num_features = data_paths.shape
-    print(f"{num_records} records, {num_features} features")
+    print("\n================================================")
+    print("Test Data records")
+    print(f"Num of Records/Rows: {num_records}")
+    print(f"Num of Features/Columns: {num_features}")
+    print(f"There are {num_records} records with {num_features} features")
+    print("==================================================")
 
     data = data_paths.rename(columns=lambda x: x.strip())
 
