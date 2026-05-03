@@ -28,8 +28,10 @@ class CompetitiveLearning:
         self.learning_rate = learning_rate
         self.gaussian = gaussian
         self.dist_metric = dist_metric
-        self.grid_shape = (int(np.sqrt(self.num_neurons)),
-                        int(np.sqrt(self.num_neurons)))
+        self.grid_shape = (
+            int(np.sqrt(self.num_neurons)),
+            int(np.sqrt(self.num_neurons)),
+        )
 
         self.input_data = load_training_data(training_data)
         self.neuron_weights = np.random.normal(
@@ -311,7 +313,7 @@ class CompetitiveLearning:
         r2, c2 = self.index_to_2d(neuron2)
 
         return abs(r1 - r2) + abs(c1 - c2) == 1
-    
+
     def index_to_2d(self, index):
         _, cols = self.grid_shape
         return index // cols, index % cols
@@ -464,25 +466,48 @@ class CompetitiveLearning:
     # ------------------------------------------------------------
     # Convergence visualization
     # ------------------------------------------------------------
-    def check_convergence(self, epoch_index, convergence_threshold, patience):
+    def check_convergence(self, epoch_index, convergence_threshold=1e-3, patience=10):
         """
-        Stop training if raw SOM weight changes remain below
+        Stop training if normalized SOM weight changes remain below
         threshold for several consecutive epochs.
+
+        Uses relative (scale-independent) weight change:
+            ||W_t - W_{t-1}|| / ||W_{t-1}||
         """
 
         if len(self.epoch_weights) > 1:
 
-            weight_change = np.linalg.norm(
-                self.epoch_weights[-1] - self.epoch_weights[-2]
-            )
+            w_t = self.epoch_weights[-1]
+            w_prev = self.epoch_weights[-2]
 
+            # -----------------------------
+            # Normalized weight change
+            # -----------------------------
+            denom = np.linalg.norm(w_prev)
+
+            # Avoid division by zero
+            if denom == 0:
+                weight_change = 0.0
+            else:
+                weight_change = np.linalg.norm(w_t - w_prev) / denom
+
+            # -----------------------------
+            # Convergence logic
+            # -----------------------------
             if weight_change < convergence_threshold:
                 self.convergence_counter += 1
-
-                if self.convergence_counter >= patience:
-                    return True
             else:
                 self.convergence_counter = 0
+
+            # -----------------------------
+            # Early stopping condition
+            # -----------------------------
+            if self.convergence_counter >= patience:
+                print(
+                    f"Converged at epoch {epoch_index} "
+                    f"(ΔW = {weight_change:.6e}, patience reached)"
+                )
+                return True
 
         return False
 
@@ -796,7 +821,9 @@ class CompetitiveLearning:
     # ------------------------------------------------------------
     # Supporting Methods
     # ------------------------------------------------------------
-    def initialize_distance_normalization_constants(self, test_samples, neuron_counts, model_dir):
+    def initialize_distance_normalization_constants(
+        self, test_samples, neuron_counts, model_dir
+    ):
         """
         Compute per-model normalization constants for multiple trained SOM models.
 
@@ -946,7 +973,9 @@ class CompetitiveLearning:
         )
         plt.close()
 
-    def plot_discriminant_subplots(self, bmu_sequence, input_samples, cluster_colors, num_neurons):
+    def plot_discriminant_subplots(
+        self, bmu_sequence, input_samples, cluster_colors, num_neurons
+    ):
         """
         Plot discriminant score trends for each winning neuron.
 
@@ -1196,18 +1225,14 @@ class CompetitiveLearning:
         num_models = len(model_ids)
 
         fig, axes = plt.subplots(
-            num_models,
-            1,
-            figsize=(14, 3.5 * num_models),
-            sharex=True
+            num_models, 1, figsize=(14, 3.5 * num_models), sharex=True
         )
 
         if num_models == 1:
             axes = [axes]
 
         fig.suptitle(
-            f"{metric_name} Trends Across Input Samples for All SOM Models",
-            fontsize=16
+            f"{metric_name} Trends Across Input Samples for All SOM Models", fontsize=16
         )
 
         for subplot_index, num_neurons in enumerate(model_ids):
@@ -1222,12 +1247,7 @@ class CompetitiveLearning:
             # -----------------------------
             # Plot metric trend
             # -----------------------------
-            ax.plot(
-                x,
-                metric_values,
-                linewidth=1.5,
-                label=f"SOM {num_neurons}"
-            )
+            ax.plot(x, metric_values, linewidth=1.5, label=f"SOM {num_neurons}")
 
             # -----------------------------
             # Shaded BMU active regions
@@ -1256,7 +1276,7 @@ class CompetitiveLearning:
                     where=non_top_mask,
                     color="gray",
                     alpha=0.05,
-                    step="pre"
+                    step="pre",
                 )
 
             for neuron_index in top_neurons:
@@ -1268,18 +1288,17 @@ class CompetitiveLearning:
                 breaks = np.where(np.diff(winning_sample_indices) > 1)[0]
 
                 segment_ranges = zip(
-                    np.r_[0, breaks + 1],
-                    np.r_[breaks, len(winning_sample_indices) - 1]
+                    np.r_[0, breaks + 1], np.r_[breaks, len(winning_sample_indices) - 1]
                 )
 
                 for start_idx, end_idx in segment_ranges:
-                    active_region = winning_sample_indices[start_idx:end_idx + 1]
+                    active_region = winning_sample_indices[start_idx : end_idx + 1]
 
                     ax.axvspan(
                         active_region[0],
                         active_region[-1],
                         color=cluster_colors[neuron_index],
-                        alpha=0.25
+                        alpha=0.25,
                     )
 
             ax.set_title(f"SOM {num_neurons} Neurons | {metric_name}")
@@ -1333,13 +1352,12 @@ if __name__ == "__main__":
     # Define models - [6 - 18]
     neuron_range = range(6, 20, 2)
 
-    radius = 0.0001
-    learning_rate = 0.007
+    learning_rate = 0.2
     gaussian = True
     dist_metric = "cosine"
 
-    num_epochs = 100
-    convergence_threshold = 0.05
+    num_epochs = 120
+    convergence_threshold = 0.001
     patience = 10
 
     model_dir = "trained_som_models"
@@ -1352,31 +1370,31 @@ if __name__ == "__main__":
     # ------------------------------------------------------------
     # Train SOM models from 6 to 18 neurons
     # ------------------------------------------------------------
-    # for num_neurons in neuron_range:
-    #     print("\n================================================")
-    #     print(f"Training SOM with {num_neurons} neurons")
-    #     print("==================================================")
+    for num_neurons in neuron_range:
+        print("\n================================================")
+        print(f"Training SOM with {num_neurons} neurons")
+        print("==================================================")
 
-    #     os.makedirs(f"figures_new_SOM_{num_neurons}", exist_ok=True)
+        os.makedirs(f"figures_new_SOM_{num_neurons}", exist_ok=True)
 
-    #     som = CompetitiveLearning(
-    #         num_neurons=num_neurons,
-    #         training_data=training_data,
-    #         radius=radius,
-    #         learning_rate=learning_rate,
-    #         gaussian=gaussian,
-    #         dist_metric=dist_metric,
-    #     )
+        som = CompetitiveLearning(
+            num_neurons=num_neurons,
+            training_data=training_data,
+            radius=(num_neurons // 2),
+            learning_rate=learning_rate,
+            gaussian=gaussian,
+            dist_metric=dist_metric,
+        )
 
-    #     som.train(
-    #         num_of_epochs=num_epochs,
-    #         convergence_threshold=convergence_threshold,
-    #         patience=patience,
-    #     )
+        som.train(
+            num_of_epochs=num_epochs,
+            convergence_threshold=convergence_threshold,
+            patience=patience,
+        )
 
-    #     model_path = f"{model_dir}/SOM_{num_neurons}_cls.pkl"
-    #     som.save(model_path)
-    #     print(f"Saved model: {model_path}")
+        model_path = f"{model_dir}/SOM_{num_neurons}_cls.pkl"
+        som.save(model_path)
+        print(f"Saved model: {model_path}")
 
     # ------------------------------------------------------------
     # Test SOM models from 6 to 18 neurons
@@ -1404,7 +1422,7 @@ if __name__ == "__main__":
         loaded_som = CompetitiveLearning(
             num_neurons=num_neurons,
             training_data=training_data,
-            radius=radius,
+            radius=(num_neurons // 2),
             learning_rate=learning_rate,
             gaussian=gaussian,
             dist_metric=dist_metric,
@@ -1484,17 +1502,14 @@ if __name__ == "__main__":
             # Discriminant score
             # -----------------------------
             discriminant_score = loaded_som.calculate_discriminant_score(
-                neuron_distances,
-                bmu_index,
-                loaded_som.num_neurons
+                neuron_distances, bmu_index, loaded_som.num_neurons
             )
 
             # -----------------------------
             # Gap score
             # -----------------------------
             gap_score = loaded_som.calculate_discriminant_gap_score(
-                neuron_distances,
-                loaded_som.num_neurons
+                neuron_distances, loaded_som.num_neurons
             )
 
             sample_qe_values.append(sample_qe)
@@ -1505,7 +1520,7 @@ if __name__ == "__main__":
             cluster_colors_by_model[num_neurons] = loaded_som.get_cluster_colors(
                 bmu_sequence
             )
-        
+
         # Convert to numpy arrays
         sample_qe_values = np.asarray(sample_qe_values)
         sample_te_values = np.asarray(sample_te_values)
@@ -1558,7 +1573,7 @@ if __name__ == "__main__":
             bmu_sequence=bmu_sequence,
             input_samples=test_samples,
             cluster_colors=cluster_colors,
-            num_neurons=loaded_som.num_neurons
+            num_neurons=loaded_som.num_neurons,
         )
 
         # --------------------------------------------------------
@@ -1569,7 +1584,7 @@ if __name__ == "__main__":
             sample_index=0,
             joint_connections=loaded_som.joint_connections,
         )
-    
+
     # --------------------------------------------------------
     # Plot Metrics accross models - QE, TE, DS, GAP
     # --------------------------------------------------------
