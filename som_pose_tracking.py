@@ -56,11 +56,19 @@ class CompetitiveLearning:
 
         # Visualizations
         self.joint_connections = [
-            (0, 1), (1, 2), (2, 3),      # right arm
-            (0, 4), (4, 5), (5, 6),      # left arm
-            (0, 7), (7, 8), (8, 9),      # spine
-            (7, 10), (10, 11),           # right leg
-            (7, 12), (12, 13),           # left leg
+            (0, 1),
+            (1, 2),
+            (2, 3),  # right arm
+            (0, 4),
+            (4, 5),
+            (5, 6),  # left arm
+            (0, 7),
+            (7, 8),
+            (8, 9),  # spine
+            (7, 10),
+            (10, 11),  # right leg
+            (7, 12),
+            (12, 13),  # left leg
         ]
 
     # ------------------------------------------------------------
@@ -766,7 +774,9 @@ class CompetitiveLearning:
 
         return matching_results
 
-    def plot_posture_match(self, test_samples, sample_index, save_dir, joint_connections=None):
+    def plot_posture_match(
+        self, test_samples, sample_index, save_dir, joint_connections=None
+    ):
         """
         Plot one test posture, its BMU prototype, and its 2nd BMU prototype
         as 3D skeletons.
@@ -1408,7 +1418,7 @@ class CompetitiveLearning:
                 )
 
                 for start_idx, end_idx in segment_ranges:
-                    active_region = winning_sample_indices[start_idx:end_idx + 1]
+                    active_region = winning_sample_indices[start_idx : end_idx + 1]
 
                     if len(active_region) < min_segment_length:
                         continue
@@ -1457,7 +1467,7 @@ class CompetitiveLearning:
 
         self.__dict__.clear()
         self.__dict__.update(state_dict)
-    
+
     def moving_average(self, values, window):
         values = np.asarray(values, dtype=float)
 
@@ -1477,13 +1487,6 @@ class CompetitiveLearning:
 if __name__ == "__main__":
     training_data = "training_data"
     test_data = "test_data"
-    joint_connections = [
-            (0, 1), (1, 2), (2, 3),      # right arm
-            (0, 4), (4, 5), (5, 6),      # left arm
-            (0, 7), (7, 8), (8, 9),      # spine
-            (7, 10), (10, 11),           # right leg
-            (7, 12), (12, 13),           # left leg
-        ]
 
     # Define models - [6 - 18]
     neuron_range = range(6, 22, 2)
@@ -1722,7 +1725,7 @@ if __name__ == "__main__":
             test_samples=test_samples,
             sample_index=0,
             save_dir=postures_save_dir,
-            joint_connections=joint_connections,
+            joint_connections=loaded_som.joint_connections,
         )
 
     # --------------------------------------------------------
