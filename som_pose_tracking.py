@@ -16,6 +16,12 @@ from matplotlib.lines import Line2D
 from data_preprocessing import load_training_data, load_test_data
 
 
+def compute_grid_shape(num_neurons: int) -> tuple[int, int]:
+    rows = int(np.sqrt(num_neurons))
+    cols = int(np.ceil(num_neurons / rows))
+    return rows, cols
+
+
 # ================================================================
 # Competitive Learning Class
 # ================================================================
@@ -28,10 +34,7 @@ class CompetitiveLearning:
         self.learning_rate = learning_rate
         self.gaussian = gaussian
         self.dist_metric = dist_metric
-        self.grid_shape = (
-            int(np.sqrt(self.num_neurons)),
-            int(np.sqrt(self.num_neurons)),
-        )
+        self.grid_shape = compute_grid_shape(num_neurons)
 
         self.input_data = load_training_data(training_data)
         self.neuron_weights = np.random.normal(
@@ -50,6 +53,15 @@ class CompetitiveLearning:
         self.pca_results = []
         self.average_distance = []
         self.convergence_counter = 0
+
+        # Visualizations
+        self.joint_connections = [
+            (0, 1), (1, 2), (2, 3),      # right arm
+            (0, 4), (4, 5), (5, 6),      # left arm
+            (0, 7), (7, 8), (8, 9),      # spine
+            (7, 10), (10, 11),           # right leg
+            (7, 12), (12, 13),           # left leg
+        ]
 
     # ------------------------------------------------------------
     # Distance computation
@@ -110,107 +122,127 @@ class CompetitiveLearning:
     # ------------------------------------------------------------
     def update_weights(self, input_vector):
         """
-        Update the BMU and its neighboring neuron weights.
+        Update BMU and neighboring neurons using a 2D Gaussian SOM neighborhood.
+
+        Standard SOM update:
+            w_i(t+1) = w_i(t) + alpha(t) * h_ci(t) * (x - w_i(t))
+
+        where h_ci(t) depends on 2D grid distance, not feature-space distance.
         """
 
-        # Update the winning neuron / BMU
-        self.neuron_weights[self.winner_idx] += self.learning_rate * (
-            input_vector - self.neuron_weights[self.winner_idx]
-        )
+        lr = self.current_learning_rate
+        radius = self.current_radius
 
-        # Update neighboring neurons with smaller influence
-        for neuron_index, distance_from_winner in self.kohonen_neighborhood().items():
-            if neuron_index == self.winner_idx:
-                continue
-            if distance_from_winner <= self.radius:
-                self.neuron_weights[neuron_index] += (
-                    0.8
-                    * self.learning_rate
-                    * (input_vector - self.neuron_weights[neuron_index])
-                )
+        # Safety: avoid division by zero
+        radius = max(radius, 1e-8)
+
+        for neuron_index in range(self.num_neurons):
+
+            grid_dist = self.grid_distance_2d(neuron_index, self.winner_idx)
+
+            # Gaussian neighborhood function
+            neighborhood_influence = np.exp(-(grid_dist**2) / (2 * radius**2))
+
+            self.neuron_weights[neuron_index] += (
+                lr
+                * neighborhood_influence
+                * (input_vector - self.neuron_weights[neuron_index])
+            )
 
     def kohonen_neighborhood(self):
         """
-        Return neurons whose prototype vectors lie within the neighborhood
-        radius of the winning neuron.
+        Return 2D SOM grid distances from winner to every neuron.
         """
+
         neighboring_neurons = {}
-        winner_weight = self.neuron_weights[self.winner_idx]
 
-        for neuron_index, neuron_weight in enumerate(self.neuron_weights):
-            distance_to_winner = self.calculate_distances(
-                winner_weight, [neuron_weight]
-            )[0]
+        winner_row, winner_col = self.index_to_2d(self.winner_idx)
 
-            if distance_to_winner <= self.radius:
-                neighboring_neurons[neuron_index] = distance_to_winner
+        for neuron_index in range(self.num_neurons):
+            row, col = self.index_to_2d(neuron_index)
+
+            distance_from_winner = np.sqrt(
+                (row - winner_row) ** 2 + (col - winner_col) ** 2
+            )
+
+            neighboring_neurons[neuron_index] = distance_from_winner
 
         return neighboring_neurons
 
-    def train(self, num_of_epochs, convergence_threshold=0.1, patience=10):
+    def train(self, num_of_epochs, convergence_threshold=1e-3, patience=10):
         """
-        Train the SOM network. It repeatedly presents posture samples to the neurons,
-        finds the BMU, updates the BMU/neighborhood weights, tracks error, saves models,
-        checks convergence, and finally generates plots
+        Train a 2D SOM using:
+            - shuffled input samples
+            - decaying learning rate
+            - decaying neighborhood radius
+            - Gaussian 2D neighborhood update
+            - normalized convergence checking
         """
         self.all_steps = num_of_epochs * len(self.input_data)
+        self.convergence_counter = 0
+        self.epoch_weights = []
+
+        # Store initial weights
+        self.epoch_weights.append(np.copy(self.neuron_weights))
+
+        initial_learning_rate = self.learning_rate
+        initial_radius = self.radius
 
         for epoch_index in range(num_of_epochs):
-            print(f"Training Epoch {epoch_index}")
 
-            # Shuffle training samples so the SOM does not learn sequence bias
+            print(f"Training Epoch {epoch_index + 1}/{num_of_epochs}")
+
+            # -----------------------------
+            # Decay learning rate and radius
+            # -----------------------------
+            self.current_learning_rate = initial_learning_rate * np.exp(
+                -epoch_index / num_of_epochs
+            )
+
+            self.current_radius = initial_radius * np.exp(-epoch_index / num_of_epochs)
+
+            # Optional: prevent radius from becoming too tiny
+            self.current_radius = max(self.current_radius, 1e-3)
+
+            # -----------------------------
+            # Shuffle data
+            # -----------------------------
             self.input_data = shuffle(self.input_data)
 
-            # Store BMU assignments for this epoch
             self.winners_list = []
 
+            # -----------------------------
+            # Train one epoch
+            # -----------------------------
             for input_vector in self.input_data:
 
-                # Compute distance from current input to all neuron prototypes
                 self.distance = self.calculate_distances(
                     input_vector, self.neuron_weights
                 )
 
-                # Find Best Matching Unit
                 self.winner_idx, _ = self.find_winner_neuron()
 
-                # Store winning neuron index
                 self.winners_list.append(self.winner_idx)
 
-                # Move BMU and neighbors toward the input vector
                 self.update_weights(input_vector)
 
-            # Compute quantization/training error after epoch
+            # -----------------------------
+            # Compute training metrics
+            # -----------------------------
             self.calculate_quantization_error()
             self.calculate_topographic_error()
 
-            # Save checkpoint every 5 epochs
-            if (epoch_index + 1) % 5 == 0:
+            # -----------------------------
+            # Store weights BEFORE convergence check
+            # -----------------------------
+            self.epoch_weights.append(np.copy(self.neuron_weights))
 
-                # Directory per neuron count
-                neuron_dir = f"SOM_neuron_{self.num_neurons}"
-                os.makedirs(neuron_dir, exist_ok=True)
-
-                # Full path = directory + filename
-                save_filename = os.path.join(
-                    neuron_dir,
-                    f"SOM_neurons_{self.num_neurons}_epoch_{epoch_index + 1}.pkl",
-                )
-
-                print(
-                    f"Saving model for {self.num_neurons} neurons "
-                    f"at epoch {epoch_index + 1} → {save_filename}"
-                )
-
-                self.save(save_filename)
-
-            # Stop training if weights have converged
+            # -----------------------------
+            # Check convergence
+            # -----------------------------
             if self.check_convergence(epoch_index, convergence_threshold, patience):
                 print("Early stopping due to convergence.")
                 break
-
-            # Store copy of weights for later visualization
-            self.epoch_weights.append(np.copy(self.neuron_weights))
 
         # Visualize training results
         self.compute_weight_pca_trajectory()
@@ -225,7 +257,7 @@ class CompetitiveLearning:
         plt.plot(self.error, label="Training Error")
         plt.xlabel("Epoch")
         plt.ylabel("Error")
-        plt.title("Training Error Over Time")
+        plt.title(f"Training Error Over Time | SOM {self.num_neurons} Neurons")
         plt.grid(True)
         plt.legend()
         plt.savefig(f"figures_new_SOM_{self.num_neurons}/training_error.png")
@@ -234,7 +266,6 @@ class CompetitiveLearning:
         """
         Plot quantization error over training epochs.
         """
-
         if len(self.error) == 0:
             print("No training error values to plot.")
             return
@@ -250,7 +281,9 @@ class CompetitiveLearning:
 
         plt.xlabel("Epoch")
         plt.ylabel("Quantization Error")
-        plt.title("Training Quantization Error Over Epochs")
+        plt.title(
+            f"Training Quantization Error Over Epochs | SOM {self.num_neurons} Neurons"
+        )
         plt.grid(True, alpha=0.3)
         plt.legend()
         plt.tight_layout()
@@ -317,6 +350,12 @@ class CompetitiveLearning:
     def index_to_2d(self, index):
         _, cols = self.grid_shape
         return index // cols, index % cols
+
+    def grid_distance_2d(self, neuron_index, winner_index):
+        r1, c1 = self.index_to_2d(neuron_index)
+        r2, c2 = self.index_to_2d(winner_index)
+
+        return np.sqrt((r1 - r2) ** 2 + (c1 - c2) ** 2)
 
     def get_cluster_colors(self, cluster_labels):
         """
@@ -547,7 +586,9 @@ class CompetitiveLearning:
 
         plt.xlabel("Epoch")
         plt.ylabel("PCA Coordinate")
-        plt.title("Convergence of SOM Weights (PCA Space)")
+        plt.title(
+            f"Convergence of SOM Weights (PCA Space) | SOM {self.num_neurons} Neurons"
+        )
 
         plt.grid(True)
         plt.legend()
@@ -607,7 +648,9 @@ class CompetitiveLearning:
 
         plt.xlabel("PCA Component 1")
         plt.ylabel("PCA Component 2")
-        plt.title("PCA Trajectory of SOM Weight Evolution")
+        plt.title(
+            f"PCA Trajectory of SOM Weight Evolution | SOM {self.num_neurons} Neurons"
+        )
 
         plt.grid(True)
         plt.legend()
@@ -674,7 +717,7 @@ class CompetitiveLearning:
                 bmus_for_plot,
                 title=(
                     "Winning Neurons (BMU) on Test Data (PCA 2D) | "
-                    f"min_run_len={min_run_length if apply_filter else 0}"
+                    f"SOM {self.num_neurons} Neurons"
                 ),
                 save_path=(
                     f"figures_new_SOM_{self.num_neurons}/"
@@ -723,100 +766,172 @@ class CompetitiveLearning:
 
         return matching_results
 
-    def plot_posture_match(self, test_samples, sample_index, joint_connections=None):
+    def plot_posture_match(self, test_samples, sample_index, save_dir, joint_connections=None):
         """
-        Plot one test posture, its BMU prototype, and its 2nd BMU prototype.
-        Assumes posture vectors are flattened 3D joint coordinates.
+        Plot one test posture, its BMU prototype, and its 2nd BMU prototype
+        as 3D skeletons.
         """
-
         input_vector = np.asarray(test_samples[sample_index], dtype=float)
+
         if input_vector.size % 3 != 0:
             raise ValueError(
                 f"Input vector length must be divisible by 3, got {input_vector.size}"
             )
 
+        # --------------------------------------------------------
+        # Compute BMU and 2nd BMU
+        # --------------------------------------------------------
         distances = self.calculate_distances(input_vector, self.neuron_weights)
-
         sorted_neuron_indices = np.argsort(distances)
-
         bmu_index = sorted_neuron_indices[0]
         second_bmu_index = sorted_neuron_indices[1]
 
+        # --------------------------------------------------------
+        # Reshape to 3D joint coordinates
+        # --------------------------------------------------------
         test_posture = input_vector.reshape(-1, 3)
         bmu_posture = self.neuron_weights[bmu_index].reshape(-1, 3)
         second_bmu_posture = self.neuron_weights[second_bmu_index].reshape(-1, 3)
 
-        fig = plt.figure(figsize=(15, 5))
-
-        ax1 = fig.add_subplot(131, projection="3d")
-        self.plot_skeleton(
-            ax1, test_posture, joint_connections, title=f"Test Sample {sample_index}"
-        )
-
-        ax2 = fig.add_subplot(132, projection="3d")
-        self.plot_skeleton(
-            ax2,
+        postures = [
+            test_posture,
             bmu_posture,
-            joint_connections,
-            title=f"BMU {bmu_index}\nDistance={distances[bmu_index]:.4f}",
-        )
-
-        ax3 = fig.add_subplot(133, projection="3d")
-        self.plot_skeleton(
-            ax3,
             second_bmu_posture,
-            joint_connections,
-            title=f"2nd BMU {second_bmu_index}\nDistance={distances[second_bmu_index]:.4f}",
+        ]
+
+        titles = [
+            f"Test Sample {sample_index}",
+            f"BMU {bmu_index}\nDistance = {distances[bmu_index]:.4f}",
+            f"2nd BMU {second_bmu_index}\nDistance = {distances[second_bmu_index]:.4f}",
+        ]
+
+        # --------------------------------------------------------
+        # Common axis limits for fair visual comparison
+        # --------------------------------------------------------
+        all_points = np.vstack(postures)
+
+        x_min, y_min, z_min = all_points.min(axis=0)
+        x_max, y_max, z_max = all_points.max(axis=0)
+
+        max_range = max(
+            x_max - x_min,
+            y_max - y_min,
+            z_max - z_min,
         )
 
-        save_dir = "figures_posture_SOM"
-        os.makedirs(save_dir, exist_ok=True)
+        x_mid = (x_max + x_min) / 2
+        y_mid = (y_max + y_min) / 2
+        z_mid = (z_max + z_min) / 2
 
-        plt.xlabel("Postures ***")
-        plt.ylabel("BMU and 2nd BMU ***")
-        plt.title("Skeletal Plots")
+        axis_limits = {
+            "x": (x_mid - max_range / 2, x_mid + max_range / 2),
+            "y": (y_mid - max_range / 2, y_mid + max_range / 2),
+            "z": (z_mid - max_range / 2, z_mid + max_range / 2),
+        }
+
+        # --------------------------------------------------------
+        # Create figure
+        # --------------------------------------------------------
+        fig = plt.figure(figsize=(18, 6))
+
+        for i, (posture, title) in enumerate(zip(postures, titles), start=1):
+            ax = fig.add_subplot(1, 3, i, projection="3d")
+
+            self.plot_skeleton_3d(
+                ax=ax,
+                joints=posture,
+                joint_connections=joint_connections,
+                title=title,
+                axis_limits=axis_limits,
+            )
+
+        fig.suptitle(
+            f"3D Posture Match | SOM {self.num_neurons} Neurons",
+            fontsize=14,
+        )
+
+        save_path = os.path.join(
+            save_dir,
+            f"posture_match_sample_{self.num_neurons}.png",
+        )
+
         plt.tight_layout()
-        plt.savefig(
-            os.path.join(save_dir, f"{self.num_neurons}_posture_match.png"),
-            dpi=200,
-            bbox_inches="tight",
-        )
+        plt.savefig(save_path, dpi=200, bbox_inches="tight")
         plt.close()
 
-    def plot_skeleton(self, ax, joints, joint_connections=None, title=""):
+    def plot_skeleton_3d(
+        self,
+        ax,
+        joints,
+        joint_connections=None,
+        title="",
+        axis_limits=None,
+    ):
         """
-        Plot 3D posture skeleton from joint coordinates.
-        joints shape: (num_joints, 3)
+        Plot a 3D skeleton using joint coordinates and joint connections.
         """
+
+        import numpy as np
+
+        joints = np.asarray(joints, dtype=float)
 
         x = joints[:, 0]
         y = joints[:, 1]
         z = joints[:, 2]
 
-        ax.scatter(x, y, z, s=30)
+        # --------------------------------------------------------
+        # Plot joints
+        # --------------------------------------------------------
+        ax.scatter(
+            x,
+            y,
+            z,
+            s=18,
+            color="blue",
+            depthshade=True,
+        )
 
+        # --------------------------------------------------------
+        # Plot skeleton links
+        # --------------------------------------------------------
         if joint_connections is not None:
             for joint_a, joint_b in joint_connections:
+                if joint_a >= len(joints) or joint_b >= len(joints):
+                    continue
+
                 ax.plot(
-                    [x[joint_a], x[joint_b]],
-                    [y[joint_a], y[joint_b]],
-                    [z[joint_a], z[joint_b]],
+                    [joints[joint_a, 0], joints[joint_b, 0]],
+                    [joints[joint_a, 1], joints[joint_b, 1]],
+                    [joints[joint_a, 2], joints[joint_b, 2]],
+                    color="blue",
+                    linewidth=2,
+                    marker="o",
+                    markersize=3,
                 )
 
+        # --------------------------------------------------------
+        # Axis formatting
+        # --------------------------------------------------------
         ax.set_title(title)
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")
 
-    joint_connections = [
-        (0, 1),
-        (1, 2),
-        (2, 3),
-        (1, 4),
-        (4, 5),
-        (5, 6),
-        # add based on your skeleton format
-    ]
+        ax.grid(True)
+
+        if axis_limits is not None:
+            ax.set_xlim(axis_limits["x"])
+            ax.set_ylim(axis_limits["y"])
+            ax.set_zlim(axis_limits["z"])
+
+        # Camera angle: adjust if needed
+        ax.view_init(elev=20, azim=-70)
+
+        # Make 3D scale visually equal
+        try:
+            ax.set_box_aspect([1, 1, 1])
+        except Exception:
+            pass
 
     # ------------------------------------------------------------
     # Supporting Methods
@@ -955,12 +1070,6 @@ class CompetitiveLearning:
                 )
                 labeled_clusters.add(cluster_id)
 
-            # Mark posture boundary when BMU changes
-            if bmu_sequence[sample_index] != bmu_sequence[sample_index + 1]:
-                plt.axvline(
-                    x=sample_index + 0.5, linestyle="--", linewidth=1, alpha=0.6
-                )
-
         plt.xlabel("Sample Index")
         plt.ylabel("Discriminant Score")
         plt.title(plot_title)
@@ -995,7 +1104,9 @@ class CompetitiveLearning:
         if len(unique_bmus) == 1:
             axes = [axes]
 
-        fig.suptitle("Discriminant Scores for Each Winning Neuron")
+        fig.suptitle(
+            f"Discriminant Scores for Each Winning Neuron  | SOM {self.num_neurons} Neurons"
+        )
 
         for subplot_index, neuron_index in enumerate(unique_bmus):
 
@@ -1098,7 +1209,9 @@ class CompetitiveLearning:
 
         plt.xlabel("Epoch")
         plt.ylabel("Weight Change Δ (L2 Norm)")
-        plt.title("SOM Weight Convergence Over Epochs")
+        plt.title(
+            f"SOM Weight Convergence Over Epochs | SOM {self.num_neurons} Neurons"
+        )
         plt.grid(True, alpha=0.3)
         plt.legend()
         plt.tight_layout()
@@ -1176,7 +1289,9 @@ class CompetitiveLearning:
 
         plt.xlabel("PCA Component 1")
         plt.ylabel("PCA Component 2")
-        plt.title("Training Clusters (PCA Projection)")
+        plt.title(
+            f"Training Clusters (PCA Projection) | SOM {self.num_neurons} Neurons"
+        )
         plt.grid(True, alpha=0.3)
         plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", title="Clusters")
         plt.tight_layout()
@@ -1195,6 +1310,11 @@ class CompetitiveLearning:
         metric_name,
         ylabel,
         save_dir,
+        top_k=4,
+        step=25,
+        smooth_window=75,
+        min_segment_length=120,
+        shade_alpha=0.08,
     ):
         """
         Plot one metric trend across input samples for each SOM model.
@@ -1225,60 +1345,55 @@ class CompetitiveLearning:
         num_models = len(model_ids)
 
         fig, axes = plt.subplots(
-            num_models, 1, figsize=(14, 3.5 * num_models), sharex=True
+            num_models,
+            1,
+            figsize=(14, 3.2 * num_models),
+            sharex=True,
         )
 
         if num_models == 1:
             axes = [axes]
 
         fig.suptitle(
-            f"{metric_name} Trends Across Input Samples for All SOM Models", fontsize=16
+            f"{metric_name} Trends Across Input Samples for All SOM Models",
+            fontsize=16,
         )
 
         for subplot_index, num_neurons in enumerate(model_ids):
             ax = axes[subplot_index]
 
-            metric_values = np.asarray(metric_dict[num_neurons])
+            metric_values = np.asarray(metric_dict[num_neurons], dtype=float)
             bmu_sequence = np.asarray(bmu_sequence_dict[num_neurons])
             cluster_colors = cluster_colors_dict[num_neurons]
 
-            x = np.arange(len(metric_values))
+            full_x = np.arange(len(metric_values))
 
-            # -----------------------------
-            # Plot metric trend
-            # -----------------------------
-            ax.plot(x, metric_values, linewidth=1.5, label=f"SOM {num_neurons}")
+            # =====================================================
+            # 1. Smooth + downsample blue metric line
+            # =====================================================
+            smoothed_metric = self.moving_average(metric_values, smooth_window)
 
-            # -----------------------------
-            # Shaded BMU active regions
-            # -----------------------------
-            bmu_sequence = np.asarray(bmu_sequence)
+            x_plot = full_x[::step]
+            y_plot = smoothed_metric[::step]
 
-            # Count how often each neuron wins
+            ax.plot(
+                x_plot,
+                y_plot,
+                linewidth=1.4,
+                label=f"SOM {num_neurons}",
+            )
+
+            # =====================================================
+            # 2. Select top-k most active BMU neurons
+            # =====================================================
             unique, counts = np.unique(bmu_sequence, return_counts=True)
 
-            # Sort by frequency (descending)
             sorted_indices = np.argsort(counts)[::-1]
-
-            # Select top 4 neurons
-            top_k = 4
             top_neurons = unique[sorted_indices[:top_k]]
-            all_indices = np.arange(len(bmu_sequence))
 
-            non_top_mask = ~np.isin(bmu_sequence, top_neurons)
-
-            # Shade non-top regions lightly
-            if np.any(non_top_mask):
-                ax.fill_between(
-                    all_indices,
-                    metric_values.min(),
-                    metric_values.max(),
-                    where=non_top_mask,
-                    color="gray",
-                    alpha=0.05,
-                    step="pre",
-                )
-
+            # =====================================================
+            # 3. Shade only long active regions of top neurons
+            # =====================================================
             for neuron_index in top_neurons:
                 winning_sample_indices = np.where(bmu_sequence == neuron_index)[0]
 
@@ -1288,22 +1403,26 @@ class CompetitiveLearning:
                 breaks = np.where(np.diff(winning_sample_indices) > 1)[0]
 
                 segment_ranges = zip(
-                    np.r_[0, breaks + 1], np.r_[breaks, len(winning_sample_indices) - 1]
+                    np.r_[0, breaks + 1],
+                    np.r_[breaks, len(winning_sample_indices) - 1],
                 )
 
                 for start_idx, end_idx in segment_ranges:
-                    active_region = winning_sample_indices[start_idx : end_idx + 1]
+                    active_region = winning_sample_indices[start_idx:end_idx + 1]
+
+                    if len(active_region) < min_segment_length:
+                        continue
 
                     ax.axvspan(
                         active_region[0],
                         active_region[-1],
                         color=cluster_colors[neuron_index],
-                        alpha=0.25,
+                        alpha=shade_alpha,
                     )
 
             ax.set_title(f"SOM {num_neurons} Neurons | {metric_name}")
             ax.set_ylabel(ylabel)
-            ax.grid(True, alpha=0.3)
+            ax.grid(True, alpha=0.25)
             ax.legend(loc="upper right")
 
         axes[-1].set_xlabel("Input Sample Index")
@@ -1315,8 +1434,6 @@ class CompetitiveLearning:
 
         plt.savefig(save_path, dpi=200, bbox_inches="tight")
         plt.close()
-
-        print(f"{save_path}, plotted")
 
     def save(self, filename):
         """
@@ -1340,6 +1457,18 @@ class CompetitiveLearning:
 
         self.__dict__.clear()
         self.__dict__.update(state_dict)
+    
+    def moving_average(self, values, window):
+        values = np.asarray(values, dtype=float)
+
+        if window <= 1:
+            return values
+
+        if len(values) < window:
+            return values
+
+        kernel = np.ones(window) / window
+        return np.convolve(values, kernel, mode="same")
 
 
 # ================================================================
@@ -1348,16 +1477,22 @@ class CompetitiveLearning:
 if __name__ == "__main__":
     training_data = "training_data"
     test_data = "test_data"
+    joint_connections = [
+            (0, 1), (1, 2), (2, 3),      # right arm
+            (0, 4), (4, 5), (5, 6),      # left arm
+            (0, 7), (7, 8), (8, 9),      # spine
+            (7, 10), (10, 11),           # right leg
+            (7, 12), (12, 13),           # left leg
+        ]
 
     # Define models - [6 - 18]
-    neuron_range = range(6, 20, 2)
+    neuron_range = range(6, 22, 2)
 
     learning_rate = 0.2
     gaussian = True
     dist_metric = "cosine"
-
-    num_epochs = 120
-    convergence_threshold = 0.001
+    num_epochs = 100
+    convergence_threshold = 1e-3
     patience = 10
 
     model_dir = "trained_som_models"
@@ -1368,7 +1503,7 @@ if __name__ == "__main__":
     results = []
 
     # ------------------------------------------------------------
-    # Train SOM models from 6 to 18 neurons
+    # Train SOM models from 6 to 20 neurons
     # ------------------------------------------------------------
     for num_neurons in neuron_range:
         print("\n================================================")
@@ -1376,11 +1511,12 @@ if __name__ == "__main__":
         print("==================================================")
 
         os.makedirs(f"figures_new_SOM_{num_neurons}", exist_ok=True)
+        rows, cols = compute_grid_shape(num_neurons)
 
         som = CompetitiveLearning(
             num_neurons=num_neurons,
             training_data=training_data,
-            radius=(num_neurons // 2),
+            radius=(max(rows, cols) / 2),
             learning_rate=learning_rate,
             gaussian=gaussian,
             dist_metric=dist_metric,
@@ -1394,10 +1530,9 @@ if __name__ == "__main__":
 
         model_path = f"{model_dir}/SOM_{num_neurons}_cls.pkl"
         som.save(model_path)
-        print(f"Saved model: {model_path}")
 
     # ------------------------------------------------------------
-    # Test SOM models from 6 to 18 neurons
+    # Test SOM models from 6 to 20 neurons
     # ------------------------------------------------------------
     # Load test data
     test_samples = load_test_data(test_data)
@@ -1415,14 +1550,18 @@ if __name__ == "__main__":
     comparison_dir = "model_comparison_plots"
     os.makedirs(comparison_dir, exist_ok=True)
 
+    postures_save_dir = "figures_posture_match"
+    os.makedirs(postures_save_dir, exist_ok=True)
+
     for num_neurons in neuron_range:
         # --------------------------------------------------------
         # Load trained model
         # --------------------------------------------------------
+        rows, cols = compute_grid_shape(num_neurons)
         loaded_som = CompetitiveLearning(
             num_neurons=num_neurons,
             training_data=training_data,
-            radius=(num_neurons // 2),
+            radius=(max(rows, cols) / 2),
             learning_rate=learning_rate,
             gaussian=gaussian,
             dist_metric=dist_metric,
@@ -1582,7 +1721,8 @@ if __name__ == "__main__":
         loaded_som.plot_posture_match(
             test_samples=test_samples,
             sample_index=0,
-            joint_connections=loaded_som.joint_connections,
+            save_dir=postures_save_dir,
+            joint_connections=joint_connections,
         )
 
     # --------------------------------------------------------
