@@ -76,9 +76,37 @@ class CompetitiveLearning:
     # ------------------------------------------------------------
     def calculate_distances(self, input_vector, neuron_weights):
         """
-        Compute the distance between an input vector (posture sample) and each neuron weight vector
-        using the selected distance metric.
-        """
+            Compute the distance between an input posture sample and all neuron
+            prototype weight vectors using the selected distance metric.
+
+            This function evaluates how similar or dissimilar the input vector is
+            to each neuron in the Self-Organizing Map (SOM). The resulting distance
+            values are used during Best Matching Unit (BMU) selection, clustering,
+            posture classification, and confidence/discriminant calculations.
+
+            Supported distance metrics:
+                - "manhattan" : Manhattan (L1) distance
+                - "minkowski" : Minkowski distance with p=3
+                - "hamming"   : Hamming distance
+                - "cosine"    : Cosine distance
+                - "euclidean" : Euclidean (L2) distance
+
+            If an unsupported metric is specified, cosine distance is used by default.
+
+            Args:
+                input_vector (np.ndarray):
+                    Input posture feature vector representing one sample.
+
+                neuron_weights (np.ndarray):
+                    Array of neuron prototype vectors with shape:
+                        (num_neurons, num_features)
+
+            Returns:
+                list[float]:
+                    Distance from the input vector to each neuron prototype.
+                    The returned list has length equal to the number of neurons,
+                    where smaller values indicate higher similarity.
+            """
 
         distance_functions = {
             "manhattan": distance.cityblock,
@@ -89,7 +117,7 @@ class CompetitiveLearning:
         }
 
         # Use chosen metric, default to Euclidean
-        distance_function = distance_functions.get(self.dist_metric, distance.euclidean)
+        distance_function = distance_functions.get(self.dist_metric, distance.cosine)
 
         # Compute distance from input vector to each neuron prototype
         return [
@@ -681,7 +709,7 @@ class CompetitiveLearning:
         apply_filter=True,
         plot_results=True,
         overlay_weights=True,
-        max_points=6000,
+        max_points=8000,
     ):
         """
         Classify test samples using the BMU and second BMU.
@@ -1030,12 +1058,12 @@ class CompetitiveLearning:
         with open(model_file, "rb") as f:
             model_dict = pickle.load(f)
 
-        weights = model_dict["neuron_weights"]
+        neuron_weights = model_dict["neuron_weights"]
         max_gap = 0.0
 
         for sample in test_samples:
-            distances = self.calculate_distances(sample, weights)
-            sorted_distances = np.sort(distances)
+            neuron_distances = self.calculate_distances(sample, neuron_weights)
+            sorted_distances = np.sort(neuron_distances)
             gap = sorted_distances[1] - sorted_distances[0]
             max_gap = max(max_gap, gap)
 
@@ -1488,11 +1516,10 @@ if __name__ == "__main__":
     training_data = "training_data"
     test_data = "test_data"
 
-    # Define models - [6 - 18]
+    # Define models - [6 - 20]
     neuron_range = range(6, 22, 2)
 
     learning_rate = 0.2
-    gaussian = True
     dist_metric = "cosine"
     num_epochs = 100
     convergence_threshold = 1e-3
@@ -1521,7 +1548,7 @@ if __name__ == "__main__":
             training_data=training_data,
             radius=(max(rows, cols) / 2),
             learning_rate=learning_rate,
-            gaussian=gaussian,
+            gaussian=True,
             dist_metric=dist_metric,
         )
 
@@ -1566,7 +1593,7 @@ if __name__ == "__main__":
             training_data=training_data,
             radius=(max(rows, cols) / 2),
             learning_rate=learning_rate,
-            gaussian=gaussian,
+            gaussian=True,
             dist_metric=dist_metric,
         )
 
@@ -1583,12 +1610,7 @@ if __name__ == "__main__":
         # Classify test data
         # --------------------------------------------------------
         bmu_sequence, second_bmu_sequence = loaded_som.classify(
-            test_samples,
-            min_run_length=10,
-            apply_filter=True,
-            plot_results=True,
-            overlay_weights=True,
-            max_points=8000,
+            test_samples
         )
 
         # --------------------------------------------------------
