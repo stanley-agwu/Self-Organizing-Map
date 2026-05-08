@@ -1073,127 +1073,270 @@ class CompetitiveLearning:
     # Visualization Helpers
     # ------------------------------------------------------------
     def plot_discriminant_series(
-        self, bmu_sequence, discriminant_scores, cluster_colors, plot_title
+        self,
+        bmu_sequence,
+        discriminant_scores,
+        cluster_colors,
+        plot_title,
+        top_k=4,
+        min_segment_length=8,
+        downsample_step=1,
+        linewidth=1.8,
     ):
         """
-        Plot discriminant/confidence scores over the sequence,
-        coloring each segment by BMU cluster.
-
-        Also marks posture boundaries where the BMU changes.
+        Plots discriminant-score segments colored by BMU cluster.
+        Short noisy BMU runs are ignored to reduce visual clutter.
         """
+        bmu_sequence = np.asarray(bmu_sequence)
+        discriminant_scores = np.asarray(discriminant_scores)
 
-        plt.figure(figsize=(8, 6))
+        if plot_title is None:
+            plot_title = f"Discriminant Score Series | SOM {self.num_neurons} neurons"
+
+        # --------------------------------------------------------
+        # Select clusters to show
+        # --------------------------------------------------------
+        unique_bmus, counts = np.unique(bmu_sequence, return_counts=True)
+
+        if top_k is not None:
+            sorted_idx = np.argsort(counts)[::-1]
+            visible_clusters = unique_bmus[sorted_idx[:top_k]]
+        else:
+            visible_clusters = unique_bmus
+
+        visible_clusters = set(visible_clusters)
+
+        # --------------------------------------------------------
+        # Create figure
+        # --------------------------------------------------------
+        plt.figure(figsize=(10, 6))
         labeled_clusters = set()
 
-        for sample_index in range(len(discriminant_scores) - 1):
+        # --------------------------------------------------------
+        # Plot clean continuous segments
+        # --------------------------------------------------------
+        for cluster_id in sorted(visible_clusters):
 
-            cluster_id = bmu_sequence[sample_index]
+            active_indices = np.where(bmu_sequence == cluster_id)[0]
 
-            plt.plot(
-                [sample_index, sample_index + 1],
-                [
-                    discriminant_scores[sample_index],
-                    discriminant_scores[sample_index + 1],
-                ],
-                color=cluster_colors[cluster_id],
-                linewidth=1.5,
+            if len(active_indices) == 0:
+                continue
+
+            breaks = np.where(np.diff(active_indices) > 1)[0]
+
+            segment_ranges = zip(
+                np.r_[0, breaks + 1],
+                np.r_[breaks, len(active_indices) - 1],
             )
 
-            if cluster_id not in labeled_clusters:
-                plt.plot(
-                    [],
-                    [],
-                    color=cluster_colors[cluster_id],
-                    label=f"Cluster {cluster_id}",
-                )
-                labeled_clusters.add(cluster_id)
+            for start_idx, end_idx in segment_ranges:
+                segment = active_indices[start_idx:end_idx + 1]
 
+                if len(segment) < min_segment_length:
+                    continue
+
+                segment = segment[::downsample_step]
+
+                if len(segment) < 2:
+                    continue
+
+                plt.plot(
+                    segment,
+                    discriminant_scores[segment],
+                    color=cluster_colors[cluster_id],
+                    linewidth=linewidth,
+                    alpha=0.9,
+                )
+
+                if cluster_id not in labeled_clusters:
+                    plt.plot(
+                        [],
+                        [],
+                        color=cluster_colors[cluster_id],
+                        linewidth=linewidth,
+                        label=f"Cluster {cluster_id}",
+                    )
+                    labeled_clusters.add(cluster_id)
+
+        # --------------------------------------------------------
+        # Formatting
+        # --------------------------------------------------------
         plt.xlabel("Sample Index")
         plt.ylabel("Discriminant Score")
         plt.title(plot_title)
-        plt.legend(bbox_to_anchor=(1, 1), loc="upper left")
+
+        plt.grid(True, alpha=0.25)
+
+        if labeled_clusters:
+            plt.legend(
+                bbox_to_anchor=(1.02, 1),
+                loc="upper left",
+                frameon=True,
+            )
+
         plt.tight_layout()
-        plt.savefig(
-            f"figures_new_SOM_{self.num_neurons}/discriminant_series.png",
-            dpi=200,
-            bbox_inches="tight",
-        )
+
+        # --------------------------------------------------------
+        # Save
+        # --------------------------------------------------------
+        save_dir = f"figures_new_SOM_{self.num_neurons}"
+        os.makedirs(save_dir, exist_ok=True)
+
+        save_path = os.path.join(save_dir, "discriminant_series_clean.png")
+
+        plt.savefig(save_path, dpi=200, bbox_inches="tight")
         plt.close()
 
     def plot_discriminant_subplots(
-        self, bmu_sequence, input_samples, cluster_colors, num_neurons
+        self,
+        bmu_sequence,
+        input_samples,
+        cluster_colors,
+        num_neurons,
+        top_k=4,
+        smooth_window=15,
+        min_segment_length=8,
+        shade_alpha=0.18,
     ):
         """
-        Plot discriminant score trends for each winning neuron.
+        Plot discriminant-score trends for selected winning neurons.
 
-        Each subplot corresponds to one BMU/neuron. Shaded regions show
-        where that neuron is the active winner.
+        Each subplot corresponds to one BMU/neuron.
+        Shaded regions show where that neuron is the active winner.
         """
-
         bmu_sequence = np.asarray(bmu_sequence)
         input_samples = np.asarray(input_samples)
 
-        unique_bmus = np.unique(bmu_sequence)
+        # --------------------------------------------------------
+        # Select top-k most frequent BMUs
+        # --------------------------------------------------------
+        unique_bmus, counts = np.unique(bmu_sequence, return_counts=True)
+        sorted_indices = np.argsort(counts)[::-1]
+        selected_bmus = unique_bmus[sorted_indices[:top_k]]
 
+        # --------------------------------------------------------
+        # Create subplots
+        # --------------------------------------------------------
         fig, axes = plt.subplots(
-            len(unique_bmus), 1, figsize=(12, 4 * len(unique_bmus))
+            len(selected_bmus),
+            1,
+            figsize=(14, 4 * len(selected_bmus)),
+            sharex=True,
         )
 
-        if len(unique_bmus) == 1:
+        if len(selected_bmus) == 1:
             axes = [axes]
 
         fig.suptitle(
-            f"Discriminant Scores for Each Winning Neuron  | SOM {self.num_neurons} Neurons"
+            f"Discriminant Scores for Top {top_k} Winning Neurons | "
+            f"SOM {self.num_neurons} Neurons",
+            fontsize=14,
         )
 
-        for subplot_index, neuron_index in enumerate(unique_bmus):
+        # --------------------------------------------------------
+        # Plot each selected BMU/neuron
+        # --------------------------------------------------------
+        for subplot_index, neuron_index in enumerate(selected_bmus):
+
+            ax = axes[subplot_index]
 
             neuron_discriminant_scores = []
 
             for input_vector in input_samples:
                 neuron_distances = self.calculate_distances(
-                    input_vector, self.neuron_weights
+                    input_vector,
+                    self.neuron_weights,
                 )
 
                 score = self.calculate_discriminant_score(
-                    neuron_distances, neuron_index, num_neurons
+                    neuron_distances,
+                    neuron_index,
+                    num_neurons,
                 )
 
                 neuron_discriminant_scores.append(score)
 
-            axes[subplot_index].plot(
+            neuron_discriminant_scores = np.asarray(neuron_discriminant_scores)
+
+            # Smooth curve
+            smoothed_scores = self.moving_average(
                 neuron_discriminant_scores,
-                color=cluster_colors[neuron_index],
-                linewidth=1.5,
+                smooth_window,
             )
 
+            x = np.arange(len(smoothed_scores))
+
+            # ----------------------------------------------------
+            # Plot discriminant curve
+            # ----------------------------------------------------
+            ax.plot(
+                x,
+                smoothed_scores,
+                color=cluster_colors[neuron_index],
+                linewidth=1.5,
+                alpha=0.95,
+            )
+
+            # ----------------------------------------------------
+            # Shade active BMU regions
+            # ----------------------------------------------------
             winning_sample_indices = np.where(bmu_sequence == neuron_index)[0]
 
             if len(winning_sample_indices) > 0:
+
                 breaks = np.where(np.diff(winning_sample_indices) > 1)[0]
 
                 segment_ranges = zip(
-                    np.r_[0, breaks + 1], np.r_[breaks, len(winning_sample_indices) - 1]
+                    np.r_[0, breaks + 1],
+                    np.r_[breaks, len(winning_sample_indices) - 1],
                 )
 
                 for start_idx, end_idx in segment_ranges:
-                    active_region = winning_sample_indices[start_idx : end_idx + 1]
+                    active_region = winning_sample_indices[start_idx:end_idx + 1]
 
-                    axes[subplot_index].axvspan(
+                    # Ignore very short noisy BMU activations
+                    if len(active_region) < min_segment_length:
+                        continue
+
+                    ax.axvspan(
                         active_region[0],
                         active_region[-1],
                         color=cluster_colors[neuron_index],
-                        alpha=0.2,
+                        alpha=shade_alpha,
                     )
 
-            axes[subplot_index].set_title(f"Neuron {neuron_index} Discriminant Scores")
-            axes[subplot_index].set_xlabel("Sample Index")
-            axes[subplot_index].set_ylabel("Discriminant Score")
-            axes[subplot_index].grid(True, alpha=0.3)
+            # ----------------------------------------------------
+            # Formatting
+            # ----------------------------------------------------
+            ax.set_title(f"Neuron {neuron_index} Discriminant Scores")
+            ax.set_ylabel("Discriminant")
+            ax.set_xlabel("Sample Index")
+            ax.grid(True, alpha=0.35)
 
-        plt.tight_layout(rect=[0, 0, 1, 0.97])
+            # Optional: keep y-axis tight but clean
+            y_min = np.nanmin(smoothed_scores)
+            y_max = np.nanmax(smoothed_scores)
+            margin = 0.05 * (y_max - y_min + 1e-8)
+
+            ax.set_ylim(
+                max(0.0, y_min - margin),
+                min(1.05, y_max + margin),
+            )
+
+        # --------------------------------------------------------
+        # Save figure
+        # --------------------------------------------------------
+        save_dir = f"figures_new_SOM_{self.num_neurons}"
+        os.makedirs(save_dir, exist_ok=True)
+
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+        save_path = os.path.join(
+            save_dir,
+            "discriminant_subplots.png",
+        )
         plt.savefig(
-            f"figures_new_SOM_{self.num_neurons}/discriminant_subplots.png",
+            save_path,
             dpi=200,
             bbox_inches="tight",
         )
@@ -1473,6 +1616,312 @@ class CompetitiveLearning:
         plt.savefig(save_path, dpi=200, bbox_inches="tight")
         plt.close()
 
+    def plot_training_quantization_error(self):
+        """
+        Plot Quantization Error (QE) over SOM training epochs.
+
+        QE measures the average distance between each training sample
+        and its Best Matching Unit (BMU). Lower QE indicates that the
+        SOM prototypes better represent the training data distribution.
+        """
+        # --------------------------------------------------------
+        # Safety check
+        # --------------------------------------------------------
+        if len(self.error) == 0:
+            print("No quantization error values found.")
+            return
+
+        # --------------------------------------------------------
+        # Epoch indices
+        # --------------------------------------------------------
+        epochs = np.arange(1, len(self.error) + 1)
+
+        # --------------------------------------------------------
+        # Create figure
+        # --------------------------------------------------------
+        plt.figure(figsize=(10, 5))
+
+        plt.plot(
+            epochs,
+            self.error,
+            marker="o",
+            linewidth=2,
+            markersize=4,
+            label="Training QE",
+        )
+
+        # --------------------------------------------------------
+        # Optional smoothing
+        # --------------------------------------------------------
+        if len(self.error) > 5:
+            smooth_window = min(10, len(self.error))
+            kernel = np.ones(smooth_window) / smooth_window
+            smoothed_qe = np.convolve(
+                self.error,
+                kernel,
+                mode="same",
+            )
+
+            plt.plot(
+                epochs,
+                smoothed_qe,
+                linewidth=2.5,
+                linestyle="--",
+                label="Smoothed QE",
+            )
+
+        # --------------------------------------------------------
+        # Highlight minimum QE epoch
+        # --------------------------------------------------------
+        min_qe_index = np.argmin(self.error)
+
+        plt.scatter(
+            epochs[min_qe_index],
+            self.error[min_qe_index],
+            s=80,
+            marker="*",
+            label=f"Minimum QE = {self.error[min_qe_index]:.4f}",
+        )
+
+        # --------------------------------------------------------
+        # Labels and formatting
+        # --------------------------------------------------------
+        plt.title(
+            f"SOM Training Quantization Error | SOM {self.num_neurons} Neurons"
+        )
+
+        plt.xlabel("Training Epoch")
+        plt.ylabel("Quantization Error (QE)")
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+
+        # --------------------------------------------------------
+        # Save figure
+        # --------------------------------------------------------
+        save_dir = f"figures_new_SOM_{self.num_neurons}"
+        os.makedirs(save_dir, exist_ok=True)
+
+        save_path = os.path.join(
+            save_dir,
+            "training_quantization_error.png",
+        )
+        plt.tight_layout()
+        plt.savefig(
+            save_path,
+            dpi=200,
+            bbox_inches="tight",
+        )
+        plt.close()
+
+    def plot_training_topographic_error(self):
+        """
+        Plot Topographic Error (TE) over SOM training epochs.
+
+        TE measures topology preservation in the SOM.
+        It is the fraction of samples for which the
+        first and second BMUs are not neighbors.
+
+        Lower TE indicates better topology preservation.
+        """
+        # --------------------------------------------------------
+        # Safety check
+        # --------------------------------------------------------
+        if len(self.topographic_error) == 0:
+            print("No topographic error values found.")
+            return
+
+        # --------------------------------------------------------
+        # Epoch indices
+        # --------------------------------------------------------
+        epochs = np.arange(1, len(self.topographic_error) + 1)
+
+        # --------------------------------------------------------
+        # Create figure
+        # --------------------------------------------------------
+        plt.figure(figsize=(10, 5))
+
+        plt.plot(
+            epochs,
+            self.topographic_error,
+            marker="o",
+            linewidth=2,
+            markersize=4,
+            label="Training TE",
+        )
+
+        # --------------------------------------------------------
+        # Optional smoothing
+        # --------------------------------------------------------
+        if len(self.topographic_error) > 5:
+
+            smooth_window = min(10, len(self.topographic_error))
+
+            kernel = np.ones(smooth_window) / smooth_window
+
+            smoothed_te = np.convolve(
+                self.topographic_error,
+                kernel,
+                mode="same",
+            )
+
+            plt.plot(
+                epochs,
+                smoothed_te,
+                linewidth=2.5,
+                linestyle="--",
+                label="Smoothed TE",
+            )
+
+        # --------------------------------------------------------
+        # Highlight minimum TE epoch
+        # --------------------------------------------------------
+        min_te_index = np.argmin(self.topographic_error)
+
+        plt.scatter(
+            epochs[min_te_index],
+            self.topographic_error[min_te_index],
+            s=80,
+            marker="*",
+            label=f"Minimum TE = {self.topographic_error[min_te_index]:.4f}",
+        )
+
+        # --------------------------------------------------------
+        # Labels and formatting
+        # --------------------------------------------------------
+        plt.title(
+            f"SOM Training Topographic Error | SOM {self.num_neurons} Neurons"
+        )
+
+        plt.xlabel("Training Epoch")
+        plt.ylabel("Topographic Error (TE)")
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+
+        # --------------------------------------------------------
+        # Save figure
+        # --------------------------------------------------------
+        save_dir = f"figures_new_SOM_{self.num_neurons}"
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(
+            save_dir,
+            "training_topographic_error.png",
+        )
+        plt.tight_layout()
+        plt.savefig(
+            save_path,
+            dpi=200,
+            bbox_inches="tight",
+        )
+        plt.close()
+
+    def plot_training_discriminant_scores(self, smooth_window=5):
+        """
+        Plot training discriminant scores across SOM training epochs.
+
+        The discriminant score is used here as a cluster-confidence metric,
+        indicating how strongly the SOM assigns training samples to their BMUs.
+
+        Higher discriminant scores indicate:
+        - stronger cluster assignment
+        - better BMU separation
+        - more confident SOM representation
+        """
+        if len(self.epoch_weights) == 0:
+            print("No epoch weights found. Train the SOM first.")
+            return
+
+        epoch_mean_discriminant_scores = []
+
+        for epoch_weights in self.epoch_weights:
+
+            bmu_distances = []
+
+            # First pass: collect BMU distances for this epoch
+            for input_vector in self.input_data:
+                neuron_distances = self.calculate_distances(
+                    input_vector,
+                    epoch_weights
+                )
+
+                bmu_distance = np.min(neuron_distances)
+                bmu_distances.append(bmu_distance)
+
+            max_bmu_distance = np.max(bmu_distances)
+
+            # Second pass: compute normalized discriminant scores
+            epoch_scores = []
+
+            for bmu_distance in bmu_distances:
+                if max_bmu_distance == 0:
+                    score = 1.0
+                else:
+                    score = 1 - (bmu_distance / max_bmu_distance)
+
+                score = np.clip(score, 0.0, 1.0)
+                epoch_scores.append(score)
+
+            epoch_mean_discriminant_scores.append(np.mean(epoch_scores))
+
+        epoch_mean_discriminant_scores = np.asarray(epoch_mean_discriminant_scores)
+
+        epochs = np.arange(1, len(epoch_mean_discriminant_scores) + 1)
+
+        plt.figure(figsize=(10, 5))
+        plt.plot(
+            epochs,
+            epoch_mean_discriminant_scores,
+            marker="o",
+            linewidth=2,
+            markersize=4,
+            label="Mean Training Discriminant Score",
+        )
+
+        if len(epoch_mean_discriminant_scores) > smooth_window:
+            kernel = np.ones(smooth_window) / smooth_window
+            smoothed_scores = np.convolve(
+                epoch_mean_discriminant_scores,
+                kernel,
+                mode="same"
+            )
+
+            plt.plot(
+                epochs,
+                smoothed_scores,
+                linestyle="--",
+                linewidth=2.5,
+                label="Smoothed Trend",
+            )
+
+        max_idx = np.argmax(epoch_mean_discriminant_scores)
+
+        plt.scatter(
+            epochs[max_idx],
+            epoch_mean_discriminant_scores[max_idx],
+            s=90,
+            marker="*",
+            label=f"Max = {epoch_mean_discriminant_scores[max_idx]:.4f}",
+        )
+
+        plt.title(
+            f"SOM Training Discriminant Score | SOM {self.num_neurons} Neurons"
+        )
+        plt.xlabel("Training Epoch")
+        plt.ylabel("Mean Discriminant Score")
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+
+        save_dir = f"figures_new_SOM_{self.num_neurons}"
+        os.makedirs(save_dir, exist_ok=True)
+
+        save_path = os.path.join(
+            save_dir,
+            "training_discriminant_scores.png"
+        )
+
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=200, bbox_inches="tight")
+        plt.close()
+
     def save(self, filename):
         """
         Save model safely, handling both:
@@ -1499,10 +1948,7 @@ class CompetitiveLearning:
     def moving_average(self, values, window):
         values = np.asarray(values, dtype=float)
 
-        if window <= 1:
-            return values
-
-        if len(values) < window:
+        if window <= 1 or len(values) < window:
             return values
 
         kernel = np.ones(window) / window
@@ -1557,6 +2003,9 @@ if __name__ == "__main__":
             convergence_threshold=convergence_threshold,
             patience=patience,
         )
+        som.plot_training_quantization_error()
+        som.plot_training_topographic_error()
+        som.plot_training_discriminant_scores()
 
         model_path = f"{model_dir}/SOM_{num_neurons}_cls.pkl"
         som.save(model_path)
@@ -1743,12 +2192,12 @@ if __name__ == "__main__":
         # --------------------------------------------------------
         # Plot posture match example
         # --------------------------------------------------------
-        loaded_som.plot_posture_match(
-            test_samples=test_samples,
-            sample_index=0,
-            save_dir=postures_save_dir,
-            joint_connections=loaded_som.joint_connections,
-        )
+        # loaded_som.plot_posture_match(
+        #     test_samples=test_samples,
+        #     sample_index=0,
+        #     save_dir=postures_save_dir,
+        #     joint_connections=loaded_som.joint_connections,
+        # )
 
     # --------------------------------------------------------
     # Plot Metrics accross models - QE, TE, DS, GAP
