@@ -1,6 +1,7 @@
 # ================================================================
 # Competitive Learning (SOM-like) model training and testing
-# Evaluates discriminant scores across 3 trained SOM models (10,12,14 clusters)
+# Evaluates discriminant scores across accross multiple trained 
+# SOM models (6, 8, 10, 12, 14, 16, 18, 20 clusters)
 # Filters short non-consecutive postures (<10 samples)
 # visualizes cluster discriminant trends
 # ================================================================
@@ -13,6 +14,7 @@ import os
 from sklearn.decomposition import PCA
 from sklearn.utils import shuffle
 from matplotlib.lines import Line2D
+from collections import defaultdict
 from data_preprocessing import load_training_data, load_test_data
 
 
@@ -549,7 +551,6 @@ class CompetitiveLearning:
         Uses relative (scale-independent) weight change:
             ||W_t - W_{t-1}|| / ||W_{t-1}||
         """
-
         if len(self.epoch_weights) > 1:
 
             w_t = self.epoch_weights[-1]
@@ -590,7 +591,6 @@ class CompetitiveLearning:
         """
         Fit PCA once after training using all saved epoch weights.
         """
-
         if len(self.epoch_weights) < 2:
             return
 
@@ -606,7 +606,6 @@ class CompetitiveLearning:
         """
         Visualize evolution of SOM weights in PCA space over epochs.
         """
-
         if len(self.pca_results) < 2:
             return
 
@@ -763,18 +762,12 @@ class CompetitiveLearning:
                 overlay_weights=overlay_weights,
             )
 
-            print(
-                f"figures_new_SOM_{self.num_neurons}/"
-                "winning_clusters_bmu_pca.png, plotted"
-            )
-
         return bmu_indices, second_bmu_indices
 
     def classify_with_matches(self, test_samples):
         """
         For each test sample, return BMU and 2nd BMU information.
         """
-
         test_samples = np.asarray(test_samples)
 
         matching_results = []
@@ -975,7 +968,7 @@ class CompetitiveLearning:
     # Supporting Methods
     # ------------------------------------------------------------
     def initialize_distance_normalization_constants(
-        self, test_samples, neuron_counts, model_dir
+        self, test_samples, num_neurons, model_dir
     ):
         """
         Compute per-model normalization constants for multiple trained SOM models.
@@ -987,18 +980,16 @@ class CompetitiveLearning:
         These constants allow discriminant and confidence scores to be normalized
         separately for each SOM size instead of using one global summed value.
         """
-        self.model_max_bmu_distances = {}
-        self.model_max_gap_distances = {}
+        self.model_max_bmu_distances = defaultdict(int)
+        self.model_max_gap_distances = defaultdict(int)
 
-        for num_neurons in neuron_counts:
-            model_file = f"{model_dir}/SOM_{num_neurons}_cls.pkl"
+        model_file = f"{model_dir}/SOM_{num_neurons}_cls.pkl"
 
-            max_bmu_distance = self.get_max_bmu_distance(model_file, test_samples)
+        max_bmu_distance = self.get_max_bmu_distance(model_file, test_samples)
+        max_gap_distance = self.get_max_gap_distance(model_file, test_samples)
 
-            max_gap_distance = self.get_max_gap_distance(model_file, test_samples)
-
-            self.model_max_bmu_distances[num_neurons] = max_bmu_distance
-            self.model_max_gap_distances[num_neurons] = max_gap_distance
+        self.model_max_bmu_distances[num_neurons] = max_bmu_distance
+        self.model_max_gap_distances[num_neurons] = max_gap_distance
 
     def calculate_discriminant_score(self, neuron_distances, bmu_index, num_neurons):
         """
@@ -1007,12 +998,12 @@ class CompetitiveLearning:
 
         Normalize BMU distance using per-model constant.
         """
-        max_dist = self.model_max_bmu_distances[num_neurons]
+        max_distance = self.model_max_bmu_distances[num_neurons]
 
-        if max_dist == 0:
+        if max_distance == 0:
             return 1.0
 
-        return max(1 - (neuron_distances[bmu_index] / max_dist), 0)
+        return max((1 - (neuron_distances[bmu_index] / max_distance)), 0)
 
     def calculate_discriminant_gap_score(self, neuron_distances, num_neurons):
         """
@@ -1038,7 +1029,6 @@ class CompetitiveLearning:
         Maximum BMU distance over all test samples
         for a trained SOM model.
         """
-
         with open(model_file, "rb") as file_handle:
             model_data = pickle.load(file_handle)
 
@@ -1048,8 +1038,8 @@ class CompetitiveLearning:
 
         for sample in test_samples:
             neuron_distances = self.calculate_distances(sample, neuron_weights)
-            bmu_distance = min(neuron_distances)
-            max_bmu_distance = max(max_bmu_distance, bmu_distance)
+            max_neuron_distance = max(neuron_distances)
+            max_bmu_distance = max(max_bmu_distance, max_neuron_distance)
 
         return max_bmu_distance
 
@@ -1077,46 +1067,26 @@ class CompetitiveLearning:
         bmu_sequence,
         discriminant_scores,
         cluster_colors,
-        plot_title,
-        top_k=4,
-        min_segment_length=8,
-        downsample_step=1,
-        linewidth=1.8,
+        plot_title=None,
+        min_segment_length=5,
     ):
         """
-        Plots discriminant-score segments colored by BMU cluster.
-        Short noisy BMU runs are ignored to reduce visual clutter.
+        Plot discriminant-score segments colored by active BMU cluster.
         """
         bmu_sequence = np.asarray(bmu_sequence)
         discriminant_scores = np.asarray(discriminant_scores)
 
         if plot_title is None:
-            plot_title = f"Discriminant Score Series | SOM {self.num_neurons} neurons"
+            plot_title = f"Discriminant Series | SOM {self.num_neurons} Neurons"
 
-        # --------------------------------------------------------
-        # Select clusters to show
-        # --------------------------------------------------------
-        unique_bmus, counts = np.unique(bmu_sequence, return_counts=True)
+        fig, ax = plt.subplots(
+            figsize=(14, 8),
+            constrained_layout=True,
+        )
 
-        if top_k is not None:
-            sorted_idx = np.argsort(counts)[::-1]
-            visible_clusters = unique_bmus[sorted_idx[:top_k]]
-        else:
-            visible_clusters = unique_bmus
-
-        visible_clusters = set(visible_clusters)
-
-        # --------------------------------------------------------
-        # Create figure
-        # --------------------------------------------------------
-        plt.figure(figsize=(10, 6))
         labeled_clusters = set()
 
-        # --------------------------------------------------------
-        # Plot clean continuous segments
-        # --------------------------------------------------------
-        for cluster_id in sorted(visible_clusters):
-
+        for cluster_id in np.unique(bmu_sequence):
             active_indices = np.where(bmu_sequence == cluster_id)[0]
 
             if len(active_indices) == 0:
@@ -1124,219 +1094,121 @@ class CompetitiveLearning:
 
             breaks = np.where(np.diff(active_indices) > 1)[0]
 
-            segment_ranges = zip(
-                np.r_[0, breaks + 1],
-                np.r_[breaks, len(active_indices) - 1],
-            )
+            starts = np.r_[0, breaks + 1]
+            ends = np.r_[breaks, len(active_indices) - 1]
 
-            for start_idx, end_idx in segment_ranges:
-                segment = active_indices[start_idx:end_idx + 1]
+            for start, end in zip(starts, ends):
+                segment = active_indices[start:end + 1]
 
                 if len(segment) < min_segment_length:
                     continue
 
-                segment = segment[::downsample_step]
-
-                if len(segment) < 2:
-                    continue
-
-                plt.plot(
+                ax.plot(
                     segment,
                     discriminant_scores[segment],
-                    color=cluster_colors[cluster_id],
-                    linewidth=linewidth,
-                    alpha=0.9,
+                    color=cluster_colors[cluster_id % len(cluster_colors)],
+                    linewidth=1.4,
                 )
 
-                if cluster_id not in labeled_clusters:
-                    plt.plot(
-                        [],
-                        [],
-                        color=cluster_colors[cluster_id],
-                        linewidth=linewidth,
-                        label=f"Cluster {cluster_id}",
-                    )
-                    labeled_clusters.add(cluster_id)
+            if cluster_id not in labeled_clusters:
+                ax.plot(
+                    [],
+                    [],
+                    color=cluster_colors[cluster_id % len(cluster_colors)],
+                    linewidth=1.8,
+                    label=f"Cluster {cluster_id}",
+                )
+                labeled_clusters.add(cluster_id)
 
-        # --------------------------------------------------------
-        # Formatting
-        # --------------------------------------------------------
-        plt.xlabel("Sample Index")
-        plt.ylabel("Discriminant Score")
-        plt.title(plot_title)
+        ax.set_xlabel("Sample Index")
+        ax.set_ylabel("Discriminant Score")
+        ax.set_title(plot_title)
+        ax.grid(True, alpha=0.25)
 
-        plt.grid(True, alpha=0.25)
+        ax.legend(
+            bbox_to_anchor=(1.02, 1),
+            loc="upper left",
+            frameon=True,
+        )
 
-        if labeled_clusters:
-            plt.legend(
-                bbox_to_anchor=(1.02, 1),
-                loc="upper left",
-                frameon=True,
-            )
-
-        plt.tight_layout()
-
-        # --------------------------------------------------------
-        # Save
-        # --------------------------------------------------------
         save_dir = f"figures_new_SOM_{self.num_neurons}"
         os.makedirs(save_dir, exist_ok=True)
 
-        save_path = os.path.join(save_dir, "discriminant_series_clean.png")
+        save_path = os.path.join(save_dir, "discriminant_series.png")
 
-        plt.savefig(save_path, dpi=200, bbox_inches="tight")
-        plt.close()
+        fig.savefig(
+            save_path,
+            dpi=200,
+            bbox_inches="tight",
+        )
 
-    def plot_discriminant_subplots(
-        self,
-        bmu_sequence,
-        input_samples,
-        cluster_colors,
-        num_neurons,
-        top_k=4,
-        smooth_window=15,
-        min_segment_length=8,
-        shade_alpha=0.18,
-    ):
+        plt.close(fig)
+
+    def plot_discriminant_subplots(self, bmu_sequence, input_samples, cluster_colors, num_neurons):
         """
-        Plot discriminant-score trends for selected winning neurons.
+        Plot discriminant score trends for each winning neuron.
 
-        Each subplot corresponds to one BMU/neuron.
-        Shaded regions show where that neuron is the active winner.
+        Each subplot corresponds to one BMU/neuron. Shaded regions show
+        where that neuron is the active winner.
         """
         bmu_sequence = np.asarray(bmu_sequence)
         input_samples = np.asarray(input_samples)
 
-        # --------------------------------------------------------
-        # Select top-k most frequent BMUs
-        # --------------------------------------------------------
-        unique_bmus, counts = np.unique(bmu_sequence, return_counts=True)
-        sorted_indices = np.argsort(counts)[::-1]
-        selected_bmus = unique_bmus[sorted_indices[:top_k]]
+        unique_bmus = np.unique(bmu_sequence)
 
-        # --------------------------------------------------------
-        # Create subplots
-        # --------------------------------------------------------
         fig, axes = plt.subplots(
-            len(selected_bmus),
-            1,
-            figsize=(14, 4 * len(selected_bmus)),
-            sharex=True,
+            len(unique_bmus), 1, figsize=(12, 4 * len(unique_bmus)), constrained_layout=True
         )
 
-        if len(selected_bmus) == 1:
+        if len(unique_bmus) == 1:
             axes = [axes]
 
-        fig.suptitle(
-            f"Discriminant Scores for Top {top_k} Winning Neurons | "
-            f"SOM {self.num_neurons} Neurons",
-            fontsize=14,
-        )
+        fig.suptitle("Discriminant Scores for Each Winning Neuron")
 
-        # --------------------------------------------------------
-        # Plot each selected BMU/neuron
-        # --------------------------------------------------------
-        for subplot_index, neuron_index in enumerate(selected_bmus):
-
-            ax = axes[subplot_index]
-
+        for subplot_index, bmu_index in enumerate(unique_bmus):
             neuron_discriminant_scores = []
 
             for input_vector in input_samples:
                 neuron_distances = self.calculate_distances(
-                    input_vector,
-                    self.neuron_weights,
+                    input_vector, self.neuron_weights
                 )
 
                 score = self.calculate_discriminant_score(
-                    neuron_distances,
-                    neuron_index,
-                    num_neurons,
+                    neuron_distances, bmu_index, num_neurons
                 )
 
                 neuron_discriminant_scores.append(score)
 
-            neuron_discriminant_scores = np.asarray(neuron_discriminant_scores)
-
-            # Smooth curve
-            smoothed_scores = self.moving_average(
+            axes[subplot_index].plot(
                 neuron_discriminant_scores,
-                smooth_window,
+                color=cluster_colors[bmu_index % len(cluster_colors)],
             )
 
-            x = np.arange(len(smoothed_scores))
-
-            # ----------------------------------------------------
-            # Plot discriminant curve
-            # ----------------------------------------------------
-            ax.plot(
-                x,
-                smoothed_scores,
-                color=cluster_colors[neuron_index],
-                linewidth=1.5,
-                alpha=0.95,
-            )
-
-            # ----------------------------------------------------
-            # Shade active BMU regions
-            # ----------------------------------------------------
-            winning_sample_indices = np.where(bmu_sequence == neuron_index)[0]
+            winning_sample_indices = np.where(np.array(bmu_sequence) == bmu_index)[0]
 
             if len(winning_sample_indices) > 0:
-
                 breaks = np.where(np.diff(winning_sample_indices) > 1)[0]
 
                 segment_ranges = zip(
-                    np.r_[0, breaks + 1],
-                    np.r_[breaks, len(winning_sample_indices) - 1],
+                    np.r_[0, breaks + 1], np.r_[breaks, len(winning_sample_indices) - 1]
                 )
 
                 for start_idx, end_idx in segment_ranges:
-                    active_region = winning_sample_indices[start_idx:end_idx + 1]
+                    active_region = winning_sample_indices[start_idx : end_idx + 1]
 
-                    # Ignore very short noisy BMU activations
-                    if len(active_region) < min_segment_length:
-                        continue
-
-                    ax.axvspan(
+                    axes[subplot_index].axvspan(
                         active_region[0],
                         active_region[-1],
-                        color=cluster_colors[neuron_index],
-                        alpha=shade_alpha,
+                        color=cluster_colors[bmu_index % len(cluster_colors)],
+                        alpha=0.2,
                     )
 
-            # ----------------------------------------------------
-            # Formatting
-            # ----------------------------------------------------
-            ax.set_title(f"Neuron {neuron_index} Discriminant Scores")
-            ax.set_ylabel("Discriminant")
-            ax.set_xlabel("Sample Index")
-            ax.grid(True, alpha=0.35)
-
-            # Optional: keep y-axis tight but clean
-            y_min = np.nanmin(smoothed_scores)
-            y_max = np.nanmax(smoothed_scores)
-            margin = 0.05 * (y_max - y_min + 1e-8)
-
-            ax.set_ylim(
-                max(0.0, y_min - margin),
-                min(1.05, y_max + margin),
-            )
-
-        # --------------------------------------------------------
-        # Save figure
-        # --------------------------------------------------------
-        save_dir = f"figures_new_SOM_{self.num_neurons}"
-        os.makedirs(save_dir, exist_ok=True)
-
-        plt.tight_layout(rect=[0, 0, 1, 0.96])
-
-        save_path = os.path.join(
-            save_dir,
-            "discriminant_subplots.png",
-        )
+            axes[subplot_index].set_title(f"Neuron {bmu_index} Discriminant Scores")
+            axes[subplot_index].set_xlabel("Sample Index")
+            axes[subplot_index].set_ylabel("Discriminant Score")
+            axes[subplot_index].grid(True, alpha=0.2)
         plt.savefig(
-            save_path,
+            f"figures_new_SOM_{self.num_neurons}/discriminant_subplots.png",
             dpi=200,
             bbox_inches="tight",
         )
@@ -1354,7 +1226,6 @@ class CompetitiveLearning:
         This adds a visual boundary showing when SOM weight updates
         become small enough to be considered converged.
         """
-
         if len(self.epoch_weights) < 2:
             print("Not enough epochs to compute weight changes.")
             return
@@ -1443,14 +1314,14 @@ class CompetitiveLearning:
 
         plt.figure(figsize=(10, 8))
 
-        for c in unique_clusters:
-            idx = np.where(winners == c)[0]
+        for cluster in unique_clusters:
+            idx = np.where(winners == cluster)[0]
 
             plt.scatter(
                 X2[idx, 0],
                 X2[idx, 1],
-                color=cluster_color_map[c],
-                label=f"Cluster {c}",
+                color=cluster_color_map[cluster],
+                label=f"Cluster {cluster}",
                 s=12,
                 alpha=0.7,
                 edgecolors="none",
@@ -2052,7 +1923,7 @@ if __name__ == "__main__":
 
         # Initialize normalization
         loaded_som.initialize_distance_normalization_constants(
-            test_samples, neuron_range, model_dir
+            test_samples, num_neurons, model_dir
         )
 
         # --------------------------------------------------------
