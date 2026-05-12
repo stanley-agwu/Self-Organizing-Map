@@ -1,6 +1,6 @@
 # ================================================================
 # Competitive Learning (SOM-like) model training and testing
-# Evaluates discriminant scores across accross multiple trained 
+# Evaluates discriminant scores across accross multiple trained
 # SOM models (6, 8, 10, 12, 14, 16, 18, 20 clusters)
 # Filters short non-consecutive postures (<10 samples)
 # visualizes cluster discriminant trends
@@ -78,37 +78,37 @@ class CompetitiveLearning:
     # ------------------------------------------------------------
     def calculate_distances(self, input_vector, neuron_weights):
         """
-            Compute the distance between an input posture sample and all neuron
-            prototype weight vectors using the selected distance metric.
+        Compute the distance between an input posture sample and all neuron
+        prototype weight vectors using the selected distance metric.
 
-            This function evaluates how similar or dissimilar the input vector is
-            to each neuron in the Self-Organizing Map (SOM). The resulting distance
-            values are used during Best Matching Unit (BMU) selection, clustering,
-            posture classification, and confidence/discriminant calculations.
+        This function evaluates how similar or dissimilar the input vector is
+        to each neuron in the Self-Organizing Map (SOM). The resulting distance
+        values are used during Best Matching Unit (BMU) selection, clustering,
+        posture classification, and confidence/discriminant calculations.
 
-            Supported distance metrics:
-                - "manhattan" : Manhattan (L1) distance
-                - "minkowski" : Minkowski distance with p=3
-                - "hamming"   : Hamming distance
-                - "cosine"    : Cosine distance
-                - "euclidean" : Euclidean (L2) distance
+        Supported distance metrics:
+            - "manhattan" : Manhattan (L1) distance
+            - "minkowski" : Minkowski distance with p=3
+            - "hamming"   : Hamming distance
+            - "cosine"    : Cosine distance
+            - "euclidean" : Euclidean (L2) distance
 
-            If an unsupported metric is specified, cosine distance is used by default.
+        If an unsupported metric is specified, cosine distance is used by default.
 
-            Args:
-                input_vector (np.ndarray):
-                    Input posture feature vector representing one sample.
+        Args:
+            input_vector (np.ndarray):
+                Input posture feature vector representing one sample.
 
-                neuron_weights (np.ndarray):
-                    Array of neuron prototype vectors with shape:
-                        (num_neurons, num_features)
+            neuron_weights (np.ndarray):
+                Array of neuron prototype vectors with shape:
+                    (num_neurons, num_features)
 
-            Returns:
-                list[float]:
-                    Distance from the input vector to each neuron prototype.
-                    The returned list has length equal to the number of neurons,
-                    where smaller values indicate higher similarity.
-            """
+        Returns:
+            list[float]:
+                Distance from the input vector to each neuron prototype.
+                The returned list has length equal to the number of neurons,
+                where smaller values indicate higher similarity.
+        """
 
         distance_functions = {
             "manhattan": distance.cityblock,
@@ -1098,7 +1098,7 @@ class CompetitiveLearning:
             ends = np.r_[breaks, len(active_indices) - 1]
 
             for start, end in zip(starts, ends):
-                segment = active_indices[start:end + 1]
+                segment = active_indices[start : end + 1]
 
                 if len(segment) < min_segment_length:
                     continue
@@ -1144,7 +1144,9 @@ class CompetitiveLearning:
 
         plt.close(fig)
 
-    def plot_discriminant_subplots(self, bmu_sequence, input_samples, cluster_colors, num_neurons):
+    def plot_discriminant_subplots(
+        self, bmu_sequence, input_samples, cluster_colors, num_neurons
+    ):
         """
         Plot discriminant score trends for each winning neuron.
 
@@ -1157,7 +1159,10 @@ class CompetitiveLearning:
         unique_bmus = np.unique(bmu_sequence)
 
         fig, axes = plt.subplots(
-            len(unique_bmus), 1, figsize=(12, 4 * len(unique_bmus)), constrained_layout=True
+            len(unique_bmus),
+            1,
+            figsize=(12, 4 * len(unique_bmus)),
+            constrained_layout=True,
         )
 
         if len(unique_bmus) == 1:
@@ -1487,13 +1492,13 @@ class CompetitiveLearning:
         plt.savefig(save_path, dpi=200, bbox_inches="tight")
         plt.close()
 
-    def plot_training_quantization_error(self):
+    def plot_quantization_error(self, is_training=True):
         """
-        Plot Quantization Error (QE) over SOM training epochs.
+        Plot Quantization Error (QE) over SOM epochs.
 
-        QE measures the average distance between each training sample
+        QE measures the average distance between each sample
         and its Best Matching Unit (BMU). Lower QE indicates that the
-        SOM prototypes better represent the training data distribution.
+        SOM prototypes better represent the data distribution.
         """
         # --------------------------------------------------------
         # Safety check
@@ -1518,7 +1523,7 @@ class CompetitiveLearning:
             marker="o",
             linewidth=2,
             markersize=4,
-            label="Training QE",
+            label="Training QE" if is_training else "Testing QE",
         )
 
         # --------------------------------------------------------
@@ -1557,11 +1562,9 @@ class CompetitiveLearning:
         # --------------------------------------------------------
         # Labels and formatting
         # --------------------------------------------------------
-        plt.title(
-            f"SOM Training Quantization Error | SOM {self.num_neurons} Neurons"
-        )
+        plt.title(f"SOM Training Quantization Error | SOM {self.num_neurons} Neurons")
 
-        plt.xlabel("Training Epoch")
+        plt.xlabel("Training Epoch" if is_training else "Testing Epoch")
         plt.ylabel("Quantization Error (QE)")
         plt.grid(True, alpha=0.3)
         plt.legend()
@@ -1571,10 +1574,15 @@ class CompetitiveLearning:
         # --------------------------------------------------------
         save_dir = f"figures_new_SOM_{self.num_neurons}"
         os.makedirs(save_dir, exist_ok=True)
+        file_name = (
+            "training_quantization_error.png"
+            if is_training
+            else "testing_quantization_error.png"
+        )
 
         save_path = os.path.join(
             save_dir,
-            "training_quantization_error.png",
+            file_name,
         )
         plt.tight_layout()
         plt.savefig(
@@ -1584,9 +1592,9 @@ class CompetitiveLearning:
         )
         plt.close()
 
-    def plot_training_topographic_error(self):
+    def plot_topographic_error(self, is_training=True):
         """
-        Plot Topographic Error (TE) over SOM training epochs.
+        Plot Topographic Error (TE) over SOM epochs.
 
         TE measures topology preservation in the SOM.
         It is the fraction of samples for which the
@@ -1617,7 +1625,7 @@ class CompetitiveLearning:
             marker="o",
             linewidth=2,
             markersize=4,
-            label="Training TE",
+            label="Training TE" if is_training else "Testing TE",
         )
 
         # --------------------------------------------------------
@@ -1660,10 +1668,10 @@ class CompetitiveLearning:
         # Labels and formatting
         # --------------------------------------------------------
         plt.title(
-            f"SOM Training Topographic Error | SOM {self.num_neurons} Neurons"
+            f"SOM {"Training" if is_training else "Testing"} Topographic Error | SOM {self.num_neurons} Neurons"
         )
 
-        plt.xlabel("Training Epoch")
+        plt.xlabel("Training Epoch" if is_training else "Testing Epoch")
         plt.ylabel("Topographic Error (TE)")
         plt.grid(True, alpha=0.3)
         plt.legend()
@@ -1673,9 +1681,14 @@ class CompetitiveLearning:
         # --------------------------------------------------------
         save_dir = f"figures_new_SOM_{self.num_neurons}"
         os.makedirs(save_dir, exist_ok=True)
+        file_name = (
+            "training_topographic_error.png"
+            if is_training
+            else "testing_topographic_error.png"
+        )
         save_path = os.path.join(
             save_dir,
-            "training_topographic_error.png",
+            file_name,
         )
         plt.tight_layout()
         plt.savefig(
@@ -1685,12 +1698,12 @@ class CompetitiveLearning:
         )
         plt.close()
 
-    def plot_training_discriminant_scores(self, smooth_window=5):
+    def plot_discriminant_scores(self, is_training=True, smooth_window=5):
         """
-        Plot training discriminant scores across SOM training epochs.
+        Plot discriminant scores across SOM epochs.
 
         The discriminant score is used here as a cluster-confidence metric,
-        indicating how strongly the SOM assigns training samples to their BMUs.
+        indicating how strongly the SOM assigns samples to their BMUs.
 
         Higher discriminant scores indicate:
         - stronger cluster assignment
@@ -1704,15 +1717,11 @@ class CompetitiveLearning:
         epoch_mean_discriminant_scores = []
 
         for epoch_weights in self.epoch_weights:
-
             bmu_distances = []
 
             # First pass: collect BMU distances for this epoch
             for input_vector in self.input_data:
-                neuron_distances = self.calculate_distances(
-                    input_vector,
-                    epoch_weights
-                )
+                neuron_distances = self.calculate_distances(input_vector, epoch_weights)
 
                 bmu_distance = np.min(neuron_distances)
                 bmu_distances.append(bmu_distance)
@@ -1744,15 +1753,13 @@ class CompetitiveLearning:
             marker="o",
             linewidth=2,
             markersize=4,
-            label="Mean Training Discriminant Score",
+            label=f"Mean {"Training" if is_training else "Testing"} Discriminant Score",
         )
 
         if len(epoch_mean_discriminant_scores) > smooth_window:
             kernel = np.ones(smooth_window) / smooth_window
             smoothed_scores = np.convolve(
-                epoch_mean_discriminant_scores,
-                kernel,
-                mode="same"
+                epoch_mean_discriminant_scores, kernel, mode="same"
             )
 
             plt.plot(
@@ -1774,24 +1781,359 @@ class CompetitiveLearning:
         )
 
         plt.title(
-            f"SOM Training Discriminant Score | SOM {self.num_neurons} Neurons"
+            f"SOM {"Training" if is_training else "Testing"} Discriminant Score | SOM {self.num_neurons} Neurons"
         )
-        plt.xlabel("Training Epoch")
+        plt.xlabel("Training Epoch" if is_training else "Testing Epoch")
         plt.ylabel("Mean Discriminant Score")
         plt.grid(True, alpha=0.3)
         plt.legend()
 
         save_dir = f"figures_new_SOM_{self.num_neurons}"
         os.makedirs(save_dir, exist_ok=True)
-
-        save_path = os.path.join(
-            save_dir,
+        file_name = (
             "training_discriminant_scores.png"
+            if is_training
+            else "testing_discriminant_scores.png"
         )
+
+        save_path = os.path.join(save_dir, file_name)
 
         plt.tight_layout()
         plt.savefig(save_path, dpi=200, bbox_inches="tight")
         plt.close()
+
+    def plot_som_model_selection_metrics(self, results):
+        """
+        Create five separate SOM model-selection plots:
+
+            1. QE vs SOM neurons
+            2. TE vs SOM neurons
+            3. Mean Discriminant Score vs SOM neurons
+            4. Mean Gap Score vs SOM neurons
+            5. Combined model-selection metrics plot
+        """
+        if len(results) == 0:
+            print("No SOM model-selection results found.")
+            return
+
+        # --------------------------------------------------------
+        # Extract metrics
+        # --------------------------------------------------------
+        neurons = [r["neurons"] for r in results]
+
+        qe_values = [r["QE"] for r in results]
+        te_values = [r["TE"] for r in results]
+
+        mean_ds = [r["mean_discriminant"] for r in results]
+        std_ds = [r["std_discriminant"] for r in results]
+
+        mean_gap = [r["mean_gap_score"] for r in results]
+        std_gap = [r["std_gap_score"] for r in results]
+
+        save_dir = "model_decision"
+        os.makedirs(save_dir, exist_ok=True)
+
+        print("\n================================================")
+        print("Plot som metrics for selection")
+        print("================================================")
+        print("wt", [round(float(value), 2) for value in neurons])
+        print("qe", [round(float(value), 2) for value in qe_values])
+        print("te", [round(float(value), 2) for value in neurons])
+        print("mean_ds", [round(float(value), 2) for value in neurons])
+        print("std_ds", [round(float(value), 2) for value in neurons])
+        print("mean_gap", [round(float(value), 2) for value in neurons])
+        print("std_gap", [round(float(value), 2) for value in neurons])
+        print("================================================\n")
+
+        # --------------------------------------------------------
+        # Helper for individual metric plots
+        # --------------------------------------------------------
+        def plot_single_metric(
+            x_values,
+            y_values,
+            metric_name,
+            ylabel,
+            filename,
+            best_mode="min",
+            yerr=None,
+        ):
+            fig, ax = plt.subplots(
+                figsize=(10, 6),
+                constrained_layout=True,
+            )
+
+            if yerr is not None:
+                ax.errorbar(
+                    x_values,
+                    y_values,
+                    yerr=yerr,
+                    marker="o",
+                    linewidth=2,
+                    capsize=4,
+                    label=metric_name,
+                )
+            else:
+                ax.plot(
+                    x_values,
+                    y_values,
+                    marker="o",
+                    linewidth=2,
+                    label=metric_name,
+                )
+
+            if best_mode == "min":
+                best_index = np.argmin(y_values)
+                best_label = f"Minimum {metric_name}"
+            elif best_mode == "max":
+                best_index = np.argmax(y_values)
+                best_label = f"Maximum {metric_name}"
+            else:
+                best_index = None
+                best_label = None
+
+            if best_index is not None:
+                ax.scatter(
+                    x_values[best_index],
+                    y_values[best_index],
+                    s=130,
+                    marker="*",
+                    label=f"{best_label} | SOM {x_values[best_index]}",
+                )
+
+            ax.set_xlabel("Number of SOM Neurons")
+            ax.set_ylabel(ylabel)
+            ax.set_title(f"{metric_name} Across SOM Models (Neuron counts)")
+            ax.grid(True, alpha=0.3)
+            ax.legend(frameon=True)
+
+            save_path = os.path.join(save_dir, filename)
+
+            fig.savefig(
+                save_path,
+                dpi=200,
+                bbox_inches="tight",
+            )
+            plt.close(fig)
+            print(f"{save_path}, plotted")
+
+        # --------------------------------------------------------
+        # 1. QE vs SOM neurons
+        # --------------------------------------------------------
+        plot_single_metric(
+            x_values=neurons,
+            y_values=qe_values,
+            metric_name="Quantization Error (QE)",
+            ylabel="QE",
+            filename="qe_vs_som_neurons.png",
+            best_mode="min",
+        )
+
+        # --------------------------------------------------------
+        # 2. TE vs SOM neurons
+        # --------------------------------------------------------
+        plot_single_metric(
+            x_values=neurons,
+            y_values=te_values,
+            metric_name="Topographic Error (TE)",
+            ylabel="TE",
+            filename="te_vs_som_neurons.png",
+            best_mode="min",
+        )
+
+        # --------------------------------------------------------
+        # 3. Mean Discriminant Score vs SOM neurons
+        # --------------------------------------------------------
+        plot_single_metric(
+            x_values=neurons,
+            y_values=mean_ds,
+            metric_name="Mean Discriminant Score",
+            ylabel="Mean Discriminant Score ± Std",
+            filename="mean_discriminant_score_vs_som_neurons.png",
+            best_mode="max",
+        )
+
+        # --------------------------------------------------------
+        # 4. Mean Gap Score vs SOM neurons
+        # --------------------------------------------------------
+        plot_single_metric(
+            x_values=neurons,
+            y_values=mean_gap,
+            metric_name="Mean Gap Score",
+            ylabel="Mean Gap Score ± Std",
+            filename="mean_gap_score_vs_som_neurons.png",
+            best_mode="max",
+        )
+
+        # --------------------------------------------------------
+        # 5. Combined SOM model-selection plot
+        # --------------------------------------------------------
+        fig, ax = plt.subplots(
+            figsize=(12, 7),
+            constrained_layout=True,
+        )
+
+        ax.plot(neurons, qe_values, marker="o", linewidth=2, label="QE")
+        ax.plot(neurons, te_values, marker="o", linewidth=2, label="TE")
+        ax.plot(neurons, mean_ds, marker="o", linewidth=2, label="Mean Discriminant")
+        ax.plot(neurons, std_ds, marker="o", linewidth=2, label="Std Discriminant")
+        ax.plot(neurons, mean_gap, marker="o", linewidth=2, label="Mean Gap Score")
+        ax.plot(neurons, std_gap, marker="o", linewidth=2, label="Std Gap Score")
+
+        best_qe_index = np.argmin(qe_values)
+        ax.scatter(
+            neurons[best_qe_index],
+            qe_values[best_qe_index],
+            s=120,
+            marker="*",
+            label=f"Minimum QE ({neurons[best_qe_index]} neurons)",
+        )
+
+        best_te_index = np.argmin(te_values)
+        ax.scatter(
+            neurons[best_te_index],
+            te_values[best_te_index],
+            s=120,
+            marker="D",
+            label=f"Minimum TE ({neurons[best_te_index]} neurons)",
+        )
+
+        best_discriminant_index = np.argmax(mean_ds)
+        ax.scatter(
+            neurons[best_discriminant_index],
+            mean_ds[best_discriminant_index],
+            s=120,
+            marker="^",
+            label=f"Maximum DS ({neurons[best_discriminant_index]} neurons)",
+        )
+
+        best_gap_index = np.argmax(mean_gap)
+        ax.scatter(
+            neurons[best_gap_index],
+            mean_gap[best_gap_index],
+            s=120,
+            marker="P",
+            label=f"Maximum Gap ({neurons[best_gap_index]} neurons)",
+        )
+
+        ax.set_xlabel("Number of SOM Neurons")
+        ax.set_ylabel("")
+        ax.set_title(
+            "SOM Model Selection\n" "QE + TE + Discriminant Stability + Gap Confidence"
+        )
+
+        ax.grid(True, alpha=0.3)
+
+        ax.legend(
+            bbox_to_anchor=(1.02, 1),
+            loc="upper left",
+            frameon=True,
+        )
+
+        combined_save_path = os.path.join(
+            save_dir,
+            "som_model_selection_metrics.png",
+        )
+
+        fig.savefig(
+            combined_save_path,
+            dpi=200,
+            bbox_inches="tight",
+        )
+        plt.close(fig)
+
+    def choose_best_som_model(self, results):
+        """
+        Choose the best SOM model using normalized model-selection metrics.
+
+        Lower is better:
+            - QE
+            - TE
+            - std_discriminant
+            - std_gap_score
+
+        Higher is better:
+            - mean_discriminant
+            - mean_gap_score
+
+        Returns:
+            best_model, scored_results
+        """
+        if len(results) == 0:
+            raise ValueError("Results is empty. No SOM models to compare.")
+
+        # --------------------------------------------------------
+        # Helper: min-max normalization
+        # --------------------------------------------------------
+        def normalize(values):
+            values = np.asarray(values, dtype=float)
+
+            min_value = np.min(values)
+            max_value = np.max(values)
+
+            if max_value - min_value == 0:
+                return np.zeros_like(values)
+
+            return (values - min_value) / (max_value - min_value)
+
+        # --------------------------------------------------------
+        # Extract raw metrics
+        # --------------------------------------------------------
+        qe = normalize([r["QE"] for r in results])
+        te = normalize([r["TE"] for r in results])
+
+        std_discriminant = normalize([r["std_discriminant"] for r in results])
+        mean_discriminant = normalize([r["mean_discriminant"] for r in results])
+        mean_gap = normalize([r["mean_gap_score"] for r in results])
+        std_gap = normalize([r["std_gap_score"] for r in results])
+
+        # --------------------------------------------------------
+        # Combined score
+        # --------------------------------------------------------
+        scored_results = []
+
+        for i, r in enumerate(results):
+
+            combined_score = (
+                qe[i]
+                + te[i]
+                + std_discriminant[i]
+                - mean_discriminant[i]
+                - mean_gap[i]
+                + std_gap[i]
+            )
+
+            scored_result = dict(r)
+
+            scored_result["normalized_QE"] = qe[i]
+            scored_result["normalized_TE"] = te[i]
+            scored_result["normalized_std_discriminant"] = std_discriminant[i]
+            scored_result["normalized_mean_discriminant"] = mean_discriminant[i]
+            scored_result["normalized_mean_gap_score"] = mean_gap[i]
+            scored_result["normalized_std_gap_score"] = std_gap[i]
+            scored_result["combined_score"] = combined_score
+
+            scored_results.append(scored_result)
+
+        # --------------------------------------------------------
+        # Select minimum combined score
+        # --------------------------------------------------------
+        best_model = min(scored_results, key=lambda r: r["combined_score"])
+
+        print("\n================================================")
+        print("Best SOM Model Selection")
+        print("================================================")
+        print(f"Best number of neurons: {best_model['neurons']}")
+        print(f"Combined score: {best_model['combined_score']:.4f}")
+        print("------------------------------------------------")
+        print(f"QE: {best_model['QE']:.4f}")
+        print(f"TE: {best_model['TE']:.4f}")
+        print(f"Mean discriminant: {best_model['mean_discriminant']:.4f}")
+        print(f"Std discriminant: {best_model['std_discriminant']:.4f}")
+        print(f"Mean gap score: {best_model['mean_gap_score']:.4f}")
+        print(f"Std gap score: {best_model['std_gap_score']:.4f}")
+        print("================================================\n")
+
+        return best_model, scored_results
 
     def save(self, filename):
         """
@@ -1874,9 +2216,9 @@ if __name__ == "__main__":
             convergence_threshold=convergence_threshold,
             patience=patience,
         )
-        som.plot_training_quantization_error()
-        som.plot_training_topographic_error()
-        som.plot_training_discriminant_scores()
+        som.plot_quantization_error()
+        som.plot_topographic_error()
+        som.plot_discriminant_scores()
 
         model_path = f"{model_dir}/SOM_{num_neurons}_cls.pkl"
         som.save(model_path)
@@ -1929,23 +2271,15 @@ if __name__ == "__main__":
         # --------------------------------------------------------
         # Classify test data
         # --------------------------------------------------------
-        bmu_sequence, second_bmu_sequence = loaded_som.classify(
-            test_samples
-        )
+        bmu_sequence, second_bmu_sequence = loaded_som.classify(test_samples)
 
         # --------------------------------------------------------
-        # Discriminant scores and gap scores
+        # Discriminant scores and gap scores for each SOM model
         # --------------------------------------------------------
         discriminant_scores = []
         gap_scores = []
-
-        # --------------------------------------------------------
-        # Per-sample metric containers for this SOM model
-        # --------------------------------------------------------
-        sample_qe_values = []
-        sample_te_values = []
-        sample_discriminant_scores = []
-        sample_gap_scores = []
+        qe_values = []
+        te_values = []
 
         for sample in test_samples:
             neuron_distances = loaded_som.calculate_distances(
@@ -1956,16 +2290,19 @@ if __name__ == "__main__":
             bmu_index = sorted_indices[0]
             second_bmu_index = sorted_indices[1]
 
+            # -----------------------------
+            # Discriminant score
+            # -----------------------------
             discriminant_score = loaded_som.calculate_discriminant_score(
                 neuron_distances, bmu_index, loaded_som.num_neurons
             )
 
+            # -----------------------------
+            # Gap score
+            # -----------------------------
             gap_score = loaded_som.calculate_discriminant_gap_score(
                 neuron_distances, loaded_som.num_neurons
             )
-
-            discriminant_scores.append(discriminant_score)
-            gap_scores.append(gap_score)
 
             # -----------------------------
             # Per-sample QE
@@ -1982,40 +2319,31 @@ if __name__ == "__main__":
             else:
                 sample_te = 1
 
-            # -----------------------------
-            # Discriminant score
-            # -----------------------------
-            discriminant_score = loaded_som.calculate_discriminant_score(
-                neuron_distances, bmu_index, loaded_som.num_neurons
-            )
-
-            # -----------------------------
-            # Gap score
-            # -----------------------------
-            gap_score = loaded_som.calculate_discriminant_gap_score(
-                neuron_distances, loaded_som.num_neurons
-            )
-
-            sample_qe_values.append(sample_qe)
-            sample_te_values.append(sample_te)
-            sample_discriminant_scores.append(discriminant_score)
-            sample_gap_scores.append(gap_score)
+            qe_values.append(sample_qe)
+            te_values.append(sample_te)
+            discriminant_scores.append(discriminant_score)
+            gap_scores.append(gap_score)
             bmu_sequences_by_model[num_neurons] = np.asarray(bmu_sequence)
             cluster_colors_by_model[num_neurons] = loaded_som.get_cluster_colors(
                 bmu_sequence
             )
 
+        # Plot Test QE + TE + DSs
+        loaded_som.plot_quantization_error(is_training=False)
+        loaded_som.plot_topographic_error(is_training=False)
+        loaded_som.plot_discriminant_scores(is_training=False)
+
         # Convert to numpy arrays
-        sample_qe_values = np.asarray(sample_qe_values)
-        sample_te_values = np.asarray(sample_te_values)
-        sample_discriminant_scores = np.asarray(sample_discriminant_scores)
-        sample_gap_scores = np.asarray(sample_gap_scores)
+        qe_values = np.asarray(qe_values)
+        te_values = np.asarray(te_values)
+        discriminant_scores = np.asarray(discriminant_scores)
+        gap_scores = np.asarray(gap_scores)
 
         # Store for comparative plotting
-        comparative_metrics["QE"][num_neurons] = sample_qe_values
-        comparative_metrics["TE"][num_neurons] = sample_te_values
-        comparative_metrics["discriminant"][num_neurons] = sample_discriminant_scores
-        comparative_metrics["gap"][num_neurons] = sample_gap_scores
+        comparative_metrics["QE"][num_neurons] = qe_values
+        comparative_metrics["TE"][num_neurons] = te_values
+        comparative_metrics["discriminant"][num_neurons] = discriminant_scores
+        comparative_metrics["gap"][num_neurons] = gap_scores
 
         discriminant_scores = np.asarray(discriminant_scores)
         gap_scores = np.asarray(gap_scores)
@@ -2112,58 +2440,26 @@ if __name__ == "__main__":
     # --------------------------------------------------------
     # Plot QE + TE + Discriminant Stability
     # --------------------------------------------------------
-    neurons = [r["neurons"] for r in results]
-    qe_values = [r["QE"] for r in results]
-    te_values = [r["TE"] for r in results]
-    mean_ds = [r["mean_discriminant"] for r in results]
-    std_ds = [r["std_discriminant"] for r in results]
-    mean_gap = [r["mean_gap_score"] for r in results]
-    std_gap = [r["std_gap_score"] for r in results]
-
-    plt.figure(figsize=(10, 6))
-    plt.plot(neurons, qe_values, marker="o", label="QE")
-    plt.plot(neurons, te_values, marker="o", label="TE")
-    plt.plot(neurons, mean_ds, marker="o", label="Mean Discriminant")
-    plt.plot(neurons, std_ds, marker="o", label="Std Discriminant")
-    plt.plot(neurons, mean_gap, marker="o", label="Mean Gap Score")
-    plt.plot(neurons, std_gap, marker="o", label="Std Gap Score")
-
-    plt.xlabel("Number of SOM Neurons")
-    plt.ylabel("Score")
-    plt.title("SOM Model Selection: QE + TE + Discriminant Stability")
-    plt.grid(True, alpha=0.3)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(
-        os.path.join(decision_dir, "som_model_selection_metrics.png"),
-        dpi=200,
-        bbox_inches="tight",
-    )
-    plt.close()
+    loaded_som.plot_som_model_selection_metrics(results=results)
 
     # --------------------------------------------------------
     # Estimate optimal number of neurons
     # --------------------------------------------------------
-    best_model = None
-    best_score = float("inf")
-
-    for r in results:
-        combined_score = (
-            r["QE"]
-            + r["TE"]
-            + r["std_discriminant"]
-            - r["mean_discriminant"]
-            - r["mean_gap_score"]
-            + r["std_gap_score"]
-        )
-
-        if combined_score < best_score:
-            best_score = combined_score
-            best_model = r
+    best_model, scored_results = loaded_som.choose_best_som_model(results)
 
     print("Best SOM model: ")
     print(best_model)
+    print("Best Scored Results: ")
+    print(scored_results)
 
-
-# TO DO
-# use U-matrix and cluster boundaries
+# ================================================
+# Plot som metrics for selection
+# ================================================
+# neurons [6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0]
+# qe [0.16, 0.15, 0.14, 0.13, 0.14, 0.1, 0.13, 0.11]
+# te [6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0]
+# mean_ds [6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0]
+# std_ds [6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0]
+# mean_gap [6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0]
+# std_gap [6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0]
+# ================================================

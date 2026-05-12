@@ -112,10 +112,6 @@ def load_training_data(datafile):
     eps = 1e-8
 
     data_paths = [read_data(datafile, "*c1-w.csv"), read_data(datafile, "*c2-w.csv")]
-    print("\n================================================")
-    print("Training Data path - File name")
-    print(f"Data Paths: {data_paths}")
-    print("==================================================")
 
     for data_path in data_paths:
         num_records, num_features = data_path.shape
@@ -316,11 +312,6 @@ def load_test_data(datafile):
         - Output is suitable for SOM classification and distance computations.
     """
     data_paths = read_data(datafile, "*.csv")
-    print("\n================================================")
-    print("Tests Data path - File name")
-    print(f"Data Files: {data_paths}")
-    print(f"Data source directory: {datafile}")
-    print("==================================================")
 
     num_records, num_features = data_paths.shape
     print("\n================================================")
