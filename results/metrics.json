@@ -1,0 +1,159 @@
+{
+  "config": {
+    "seed": 42,
+    "validation_fraction": 0.2,
+    "preprocess": {
+      "min_joint_confidence": 0.0,
+      "max_missing_fraction": 0.5,
+      "max_bone_ratio": 2.0,
+      "min_track_frames": 30,
+      "max_root_step": 0.3,
+      "alignment": "yaw",
+      "scale_by_torso": true
+    },
+    "som": {
+      "rows": null,
+      "cols": null,
+      "max_units": 400,
+      "algorithm": "batch",
+      "n_epochs": 40,
+      "n_finetune": 20,
+      "sigma_end": 1.0,
+      "alpha_start": 0.5,
+      "alpha_end": 0.01,
+      "tol": 0.001
+    },
+    "clustering": {
+      "method": "ward",
+      "n_clusters": null,
+      "k_min": 2,
+      "k_max": 20,
+      "silhouette_sample": 5000,
+      "min_run_length": 10
+    }
+  },
+  "map": {
+    "rows": 19,
+    "cols": 21,
+    "units": 399,
+    "epochs_run": 59,
+    "dead_units_fit": 16
+  },
+  "chosen_k": 3,
+  "index_k": 3,
+  "k_fixed": false,
+  "confidence_reference": {
+    "reference_distance": 1.4824687872382167,
+    "novelty_distance": 1.969099819424515
+  },
+  "data": {
+    "fit": {
+      "frames": 31121,
+      "tracks": 158,
+      "recordings": 61
+    },
+    "validation": {
+      "frames": 8677,
+      "tracks": 47,
+      "recordings": 18
+    },
+    "test": {
+      "frames": 11616,
+      "tracks": 76,
+      "recordings": 24
+    }
+  },
+  "metrics": {
+    "fit": {
+      "quantization_error": 0.8777671230092011,
+      "topographic_error": 0.10680890716879278,
+      "clusters_present": 3,
+      "silhouette": 0.3655303716659546,
+      "davies_bouldin": 1.1885261294312919,
+      "calinski_harabasz": 11289.966346239398,
+      "external": {
+        "adjusted_rand": 0.035494234881010576,
+        "normalized_mutual_info": 0.17880207811061685,
+        "homogeneity": 0.12188077535866738,
+        "completeness": 0.3354789538979304,
+        "purity": 0.2389383374570226
+      },
+      "external_stable_frames_only": {
+        "adjusted_rand": 0.035880826361587216,
+        "normalized_mutual_info": 0.1806596316754953,
+        "homogeneity": 0.1229372830787176,
+        "completeness": 0.34056316174537965,
+        "purity": 0.23733307465968248
+      },
+      "mean_bmu_confidence": 0.4173835751409623,
+      "mean_cluster_margin": 0.5856082994565833,
+      "novelty_rate": 0.010025384788406541,
+      "temporal": {
+        "stable_fraction": 0.9937662671507985,
+        "mean_run_length_frames": 69.46651785714286,
+        "switches_per_second": 0.27955399890749016
+      }
+    },
+    "validation": {
+      "quantization_error": 0.9771725090075649,
+      "topographic_error": 0.1256194537282471,
+      "clusters_present": 3,
+      "silhouette": 0.35613909363746643,
+      "davies_bouldin": 1.2372297975907391,
+      "calinski_harabasz": 2841.609590291321,
+      "external": {
+        "adjusted_rand": 0.04364259338323573,
+        "normalized_mutual_info": 0.18248593565252258,
+        "homogeneity": 0.12473631061378865,
+        "completeness": 0.3398081597379035,
+        "purity": 0.25550305405093926
+      },
+      "external_stable_frames_only": {
+        "adjusted_rand": 0.04423246602972981,
+        "normalized_mutual_info": 0.1830409575879815,
+        "homogeneity": 0.12461607234647715,
+        "completeness": 0.3446054710724277,
+        "purity": 0.25139794967381174
+      },
+      "mean_bmu_confidence": 0.35539827933705,
+      "mean_cluster_margin": 0.5433789686076664,
+      "novelty_rate": 0.01394491183588798,
+      "temporal": {
+        "stable_fraction": 0.9892820099112597,
+        "mean_run_length_frames": 63.8014705882353,
+        "switches_per_second": 0.3077100380315777
+      }
+    },
+    "test": {
+      "quantization_error": 1.008179772721953,
+      "topographic_error": 0.1422176308539945,
+      "clusters_present": 3,
+      "silhouette": 0.3914656639099121,
+      "davies_bouldin": 1.1181031411430178,
+      "calinski_harabasz": 5102.586494239502,
+      "external": {
+        "adjusted_rand": 0.06173720006821992,
+        "normalized_mutual_info": 0.21343609575396413,
+        "homogeneity": 0.15363006676963728,
+        "completeness": 0.34948614892020785,
+        "purity": 0.34013429752066116
+      },
+      "external_stable_frames_only": {
+        "adjusted_rand": 0.06158894839150809,
+        "normalized_mutual_info": 0.21422867434526435,
+        "homogeneity": 0.15414000931077332,
+        "completeness": 0.35109769150360687,
+        "purity": 0.3403412028261244
+      },
+      "mean_bmu_confidence": 0.33309350372520435,
+      "mean_cluster_margin": 0.5440972430504722,
+      "novelty_rate": 0.013515840220385674,
+      "temporal": {
+        "stable_fraction": 0.9991391184573003,
+        "mean_run_length_frames": 85.41176470588235,
+        "switches_per_second": 0.15495867768595042
+      }
+    }
+  },
+  "runtime_seconds": 236.7
+}
