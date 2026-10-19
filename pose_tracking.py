@@ -1,246 +1,79 @@
-import pdb
+"""Animate one recording as a 3D skeleton.
 
-from matplotlib import pyplot as plt
-from mpl_toolkits.mplot3d import axes3d
-from matplotlib.animation import FuncAnimation
+Usage:
+    python pose_tracking.py                                  # default test file
+    python pose_tracking.py test_data/A5s10c1-w.csv --track 1
+    python pose_tracking.py training_data/A1s1c1-w.csv --canonical
+    python pose_tracking.py test_data/A1s10c1-w.csv --save a1.gif
+
+Uses the same reader and skeleton definition as the clustering pipeline, so
+multi-person files and joined exports are split into tracks first.
+"""
+
+import argparse
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 import numpy as np
-import csv
-import pdb
-import pandas as pd
-import os
+from matplotlib.animation import FuncAnimation
 
-# from matplotvideo import attach_video_player_to_figure
+from som_clustering.config import KEPT_JOINTS, SKELETON_EDGES, TEST_DIR, PreprocessConfig
+from som_clustering.data import canonicalize, fill_missing_joints, read_tracks
 
-
-# filename = "D:\\Jakub work\\passing_to_other_hand\\passing_act1_6.csv"
-filename = "test/A1s1c1-w.csv"
-df = pd.read_csv(filename)
-data = pd.DataFrame(df)
-
-data = data.drop(
-    columns=[
-        "x8",
-        "y8",
-        "z8",
-        "x9",
-        "y9",
-        "z9",
-        "x10",
-        "y10",
-        "z10",
-        "x15",
-        "y15",
-        "z15",
-        "x16",
-        "y16",
-        "z16",
-        "x17",
-        "y17",
-        "z17",
-        "x21",
-        "y21",
-        "z21",
-        "x25",
-        "y25",
-        "z25",
-        "x26",
-        "y26",
-        "z26",
-        "x28",
-        "y28",
-        "z28",
-        "x29",
-        "y29",
-        "z29",
-        "x30",
-        "y30",
-        "z30",
-        "x31",
-        "y31",
-        "z31",
-        "x32",
-        "y32",
-        "z32",
-        "x33",
-        "y33",
-        "z33",
-    ]
-)
-data = data.drop(
-    columns=[
-        "Frame number",
-        "person count",
-        "p0",
-        "p1",
-        "p2",
-        "p3",
-        "p4",
-        "p5",
-        "p6",
-        "p7",
-        "p8",
-        "p9",
-        "p10",
-        "p11",
-        "p12",
-        "p13",
-        "p14",
-        "p15",
-        "p16",
-        "p17",
-        "p18",
-        "p19",
-        "p20",
-        "p21",
-        "p22",
-        "p23",
-        "p24",
-        "p25",
-        "p26",
-        "p27",
-        "p28",
-        "p29",
-        "p30",
-        "p31",
-        "p32",
-        "p33",
-    ]
-)
-
-# data = data[:-226]
-print("dropped bad columns and columns")
-num_records, num_features = data.shape
-print(
-    "there are {} flow records with {} feature dimension".format(
-        num_records, num_features
-    )
-)
-# print(data)
+JOINT_POSITION = {joint: position for position, joint in enumerate(KEPT_JOINTS)}
+FRAMES_PER_SECOND = 15
 
 
-file = "CSV_DATA.csv"
-csv_data = data.to_csv(file)
-# print(csv_data)
-
-data = []
-head = 0
-
-with open(file, newline="") as csvfile:
-    spamreader = csv.reader(csvfile)
-    for row in spamreader:
-
-        if head == 0:
-            head = 1
-            continue
-        # for meter
-
-        data_line = [float(i) for i in row]
-
-        # for milimeter
-        # data_line = [float(i) for i in row]
-
-        if data_line == []:
-            # data.append([0] * 128)
-            continue
-        data.append(data_line)
-        # pdb.set_trace()
-# print(data)
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("file", nargs="?", type=Path, default=TEST_DIR / "A1s10c1-w.csv")
+    parser.add_argument("--track", type=int, default=0, help="track number in the file (default 0)")
+    parser.add_argument("--canonical", action="store_true",
+                        help="show body-centred coordinates as used for clustering")
+    parser.add_argument("--save", type=Path, help="save the animation as a GIF instead of showing it")
+    return parser.parse_args()
 
 
-fig = plt.figure(figsize=(10, 10))
-ax = fig.add_subplot(211, projection="3d")
-ax.view_init(90, -90)
-# ax.set_xlim(-1500, 1500)
-# ax.set_ylim(-1000, 1000)
-# ax.set_zlim(-1000, 1000)
-# print(type(ax))
+def main():
+    args = parse_args()
+    tracks = read_tracks(args.file)
+    print(f"{args.file.name}: {len(tracks)} track(s): "
+          + ", ".join(f"#{i} person {t.person}, {len(t.frames)} frames" for i, t in enumerate(tracks)))
+    track = tracks[args.track]
 
-frame = range(num_records)
+    config = PreprocessConfig()
+    joints, _ = fill_missing_joints(track.joints, track.confidence, config)
+    if args.canonical:
+        joints = canonicalize(joints, config)
 
+    fig = plt.figure(figsize=(7, 7))
+    ax = fig.add_subplot(projection="3d")
+    low, high = np.nanmin(joints, axis=(0, 1)), np.nanmax(joints, axis=(0, 1))
+    centre, half = (low + high) / 2, (high - low).max() / 2
 
-def update(frame):
+    def draw(frame_index):
+        ax.clear()
+        frame = joints[frame_index]
+        for parent, child in SKELETON_EDGES:
+            p, c = frame[JOINT_POSITION[parent]], frame[JOINT_POSITION[child]]
+            # Plot (x, z, y) so the vertical y axis points up on screen.
+            ax.plot([p[0], c[0]], [p[2], c[2]], [p[1], c[1]], color="#2a78d6", linewidth=2)
+        ax.scatter(frame[:, 0], frame[:, 2], frame[:, 1], color="#2a78d6", s=10)
+        ax.set_xlim(centre[0] - half, centre[0] + half)
+        ax.set_ylim(centre[2] - half, centre[2] + half)
+        ax.set_zlim(centre[1] - half, centre[1] + half)
+        ax.set_xlabel("x")
+        ax.set_ylabel("z")
+        ax.set_zlabel("y (up)")
+        ax.set_title(f"{args.file.name}  track {args.track}  frame {int(track.frames[frame_index])}")
 
-    # plt.cla()
-    ax.clear()
-    frame1 = data[frame]
-    # print(frame1)
-    # ax.text(0.95, 0.95, f'Frame: {frame}', transform=ax.transAxes, ha='right', va='top')
-
-    pelvis = [frame1[1], frame1[2], frame1[3]]
-    stomach = [frame1[4], frame1[5], frame1[6]]
-    chest = [frame1[7], frame1[8], frame1[9]]
-    neck = [frame1[10], frame1[11], frame1[12]]
-    Rshoulder = [frame1[13], frame1[14], frame1[15]]
-    Rforearm = [frame1[16], frame1[17], frame1[18]]
-    Relbow = [frame1[19], frame1[20], frame1[21]]
-    Rwrist = [frame1[22], frame1[23], frame1[24]]
-    Lshoulder = [frame1[25], frame1[26], frame1[27]]
-    Lforearm = [frame1[28], frame1[29], frame1[30]]
-    Lelbow = [frame1[31], frame1[32], frame1[33]]
-    Lwrist = [frame1[34], frame1[35], frame1[36]]
-    Rhip = [frame1[37], frame1[38], frame1[39]]
-    Rknee = [frame1[40], frame1[41], frame1[42]]
-    Rankle = [frame1[43], frame1[44], frame1[45]]
-    Lhip = [frame1[46], frame1[47], frame1[48]]
-    Lknee = [frame1[49], frame1[50], frame1[51]]
-    Lankle = [frame1[52], frame1[53], frame1[54]]
-    Rear = [frame1[55], frame1[56], frame1[57]]
-
-    SkeletonConnectionMap = [
-        [Rknee, Rankle],
-        [Rhip, Rknee],
-        [pelvis, Rhip],
-        [Lknee, Lankle],
-        [Lhip, Lknee],
-        [pelvis, Lhip],
-        [stomach, pelvis],
-        [chest, stomach],
-        [neck, chest],
-        [Relbow, Rwrist],
-        [Rforearm, Relbow],
-        [Rshoulder, Rforearm],
-        [neck, Rshoulder],
-        [Lelbow, Lwrist],
-        [Lforearm, Lelbow],
-        [Lshoulder, Lforearm],
-        [neck, Lshoulder],
-        [neck, Rear],
-    ]
-
-    for joint_connection in SkeletonConnectionMap:
-        endpoint_x = [joint_connection[0][0], joint_connection[1][0]]
-        endpoint_y = [joint_connection[0][1], joint_connection[1][1]]
-        endpoint_z = [joint_connection[0][2], joint_connection[1][2]]
-
-        ax.plot(endpoint_x, endpoint_y, endpoint_z, c="b")
-        ax.scatter(endpoint_x, endpoint_y, endpoint_z, c="b", marker=".")
-
-    # plt.savefig(f'frame_{frame:03d}.png')
+    animation = FuncAnimation(fig, draw, frames=len(joints), interval=1000 / FRAMES_PER_SECOND, repeat=False)
+    if args.save:
+        animation.save(args.save, writer="pillow", fps=FRAMES_PER_SECOND)
+        print(f"Saved {args.save}")
+    else:
+        plt.show()
 
 
-ani = FuncAnimation(fig, update, frames=num_records, interval=1000 / 15, repeat=False)
-plt.tight_layout()
-
-# ani = FuncAnimation(fig, update, frames=range(0, num_records), interval=1000/15, repeat=False)
-
-
-# ani = FuncAnimation(fig, update, frames=range(0, num_records),
-# init_func=init, blit=True)
-# plt.show()
-
-print("start recording")
-# ani.save('C:\\Users\\User\\Desktop\\studies_materials\\Research_work\\Research_material_Copy\\pose_visualization\\pull_cart1.gif',
-# writer = 'pillow', fps = 15)
-# ani.save('D:\\Jakub work\\vid5.gif', writer = 'pillow', fps = 15)
-
-# print("done")
-
-# image_file = 'representations/frames/frame_000.png'
-
-# Read the image file
-# img = mpimg.imread(image_file)
-
-# Display the image
-# plt.imshow(img)
-plt.axis("off")  # Hide axis
-plt.show()
+if __name__ == "__main__":
+    main()
