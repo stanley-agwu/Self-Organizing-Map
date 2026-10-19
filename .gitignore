@@ -227,6 +227,6 @@ __marimo__/
 
 # Old pickled models (about 88 MB each, contained the training data).
 # The new pipeline saves a small results/som_model.npz instead.
-/trained_som_models/*.pkl
+/trained_som_models
 # Stray file written by the old pose_tracking.py
 CSV_DATA.csv
